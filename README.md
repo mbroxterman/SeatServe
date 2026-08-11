@@ -10,7 +10,7 @@ Mill Valley High School Booster Club
 
 ## Current Version
 
-SeatServe v3.0 Alpha
+SeatServe v2.1.3A
 
 ## Status
 
