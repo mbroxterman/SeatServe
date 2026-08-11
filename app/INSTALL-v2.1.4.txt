@@ -1,0 +1,13 @@
+SeatServe v2.1.4 - Pilot Usability Enhancements
+
+Included:
+- Duplicate Menu Item action. Copies item properties and existing menu memberships/overrides to a new independent item named "Copy".
+- Duplicate Venue action exposed in Venue & Zones. Creates new IDs for the venue, zones, and sections.
+- Duplicate Zone action. Copies zone properties and sections with new IDs.
+- Browser tab title is now SeatServe.
+
+Install:
+1. Extract directly into the active app folder containing package.json.
+2. Replace matching files.
+3. Run npm install (if needed) and npm run dev.
+4. For Netlify, commit/push the changed files and Netlify will redeploy automatically.
