@@ -1,0 +1,14 @@
+SeatServe v2.1.1 - Structured Google Sheets Sync
+
+1. Stop npm run dev.
+2. Extract this ZIP directly into the active app folder that contains package.json and replace matching files.
+3. Run: npm run dev
+4. In Google Apps Script, replace ALL contents of Code.gs with google-apps-script/Code.gs from this package.
+5. Save the Apps Script project.
+6. Deploy > Manage deployments > Edit > New version > Deploy.
+7. Keep using the resulting /exec URL in the SeatServe Dev workspace.
+8. In SeatServe, click Sync Now once.
+9. Refresh the Google Sheet. New readable tabs should appear.
+10. Test reverse sync safely in Dev: edit one simple value in Menu Items, then in SeatServe use Load from Sheets. SeatServe should detect the remote edit/conflict before overwriting newer data.
+
+The SeatServe Data tab remains as a lossless JSON backup and backward-compatibility layer. Do not delete SeatServe Data or SeatServe Meta.

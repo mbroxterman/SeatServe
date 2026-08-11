@@ -1,0 +1,16 @@
+.admin-shell{min-height:100vh;display:flex;flex-direction:column;background:#f3f6fb}
+.admin-shell__body{display:grid;grid-template-columns:268px minmax(0,1fr);flex:1;min-height:0}
+.admin-sidebar{background:linear-gradient(180deg,#061632 0%,#0a2147 58%,#071a39 100%);border-right:1px solid rgba(255,255,255,.07);padding:24px 16px 22px;display:flex;flex-direction:column;gap:22px;box-shadow:8px 0 24px rgba(5,18,43,.13);color:#fff}
+.admin-sidebar__group{display:grid;gap:6px}
+.admin-sidebar__group>p{margin:0 10px 7px;color:#8195ba;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.14em}
+.admin-sidebar__link{display:flex;align-items:center;gap:12px;min-height:47px;padding:0 13px;border-radius:11px;color:#d8e2f4;text-decoration:none;font-weight:800;transition:.16s ease;border:1px solid transparent}
+.admin-sidebar__link svg{color:#a8b9d8;flex:0 0 auto}
+.admin-sidebar__link:hover{background:rgba(255,255,255,.08);color:#fff}
+.admin-sidebar__link.is-active{background:linear-gradient(135deg,#174ea6,#2468ca);color:#fff;border-color:rgba(255,255,255,.1);box-shadow:0 8px 18px rgba(17,71,157,.3)}
+.admin-sidebar__link.is-active svg{color:#fff}
+.admin-sidebar__version{margin-top:auto;border-top:1px solid rgba(255,255,255,.1);padding:18px 10px 0;color:#8296bb;font-size:11px;font-weight:800;letter-spacing:.05em}
+.admin-shell__content{min-width:0;display:flex;flex-direction:column}
+.admin-shell__main{width:min(1500px,100%);margin:0 auto;padding:30px 30px 44px;flex:1}
+.admin-shell__footer{text-align:center;color:var(--muted);font-size:.82rem;padding:1.35rem;border-top:1px solid #e5e9f0;background:rgba(255,255,255,.72)}
+@media(max-width:980px){.admin-shell__body{grid-template-columns:82px minmax(0,1fr)}.admin-sidebar{padding:18px 10px}.admin-sidebar__group>p,.admin-sidebar__link span,.admin-sidebar__version{display:none}.admin-sidebar__link{justify-content:center;padding:0}}
+@media(max-width:640px){.admin-shell__body{display:block}.admin-sidebar{position:sticky;top:0;z-index:25;display:flex;flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid rgba(255,255,255,.1);padding:8px 10px;gap:6px}.admin-sidebar__group{display:flex;gap:6px}.admin-sidebar__group>p{display:none}.admin-sidebar__link{min-width:46px;height:46px}.admin-shell__main{padding:18px 14px 30px}}

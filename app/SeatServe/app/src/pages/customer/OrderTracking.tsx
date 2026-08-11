@@ -1,0 +1,71 @@
+import { Check, Clock3, MapPin, PackageCheck, Star, X } from "lucide-react";
+import { Link, useParams } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useSeatServe } from "../../state/SeatServeContext";
+import "./CustomerOrder.css";
+
+const steps = ["new", "preparing", "ready", "assigned", "delivering", "delivered"] as const;
+const names = { new: "Order received", preparing: "Preparing", ready: "Ready for runner", assigned: "Runner assigned", delivering: "On the way", delivered: "Delivered" } as const;
+
+export default function OrderTracking() {
+  const { orderId } = useParams();
+  const { data, submitCustomerFeedback } = useSeatServe();
+  const order = data.orders.find((item) => item.id === orderId);
+  const [beaconActive, setBeaconActive] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [comments, setComments] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  const priorFeedback = useMemo(() => data.feedback.find((item) => item.orderId === orderId), [data.feedback, orderId]);
+
+  useEffect(() => {
+    if (order?.status === "delivered") setBeaconActive(false);
+  }, [order?.status]);
+
+  if (!order) return <div className="customer-message"><h1>Order not found</h1><p>Check the order number and try again.</p><Link to="/">Return to SeatServe</Link></div>;
+
+  const event = data.events.find((item) => item.id === order.eventId);
+  const venue = data.venues.find((item) => item.id === order.location.venueId);
+  const zone = venue?.zones.find((item) => item.id === order.location.zoneId);
+  const currentIndex = Math.max(0, steps.indexOf(order.status === "cancelled" ? "new" : order.status));
+  const settings = data.customerExperience;
+
+  const submit = () => {
+    if (!priorFeedback) submitCustomerFeedback({ orderId: order.id, eventId: order.eventId, rating: rating || undefined, comments: comments.trim() || undefined });
+    setSubmitted(true);
+  };
+
+  if (order.status === "delivered") {
+    return <div className="customer-shell customer-shell--delivered">
+      <header className="customer-header"><div className="customer-header__inner"><img className="customer-brand__logo" src="/seatserve-web-logo.png" alt="SeatServe"/><div className="customer-zone">Order {order.id}</div></div></header>
+      <main className="customer-main customer-main--thank-you">
+        <section className="thank-you-card">
+          <div className="thank-you-card__check"><Check size={34}/></div>
+          <p>Delivered</p>
+          <h1>{settings.headline}</h1>
+          <h2>{settings.schoolMessage}</h2>
+          <span>{settings.message}</span>
+
+          {!submitted && !priorFeedback ? <>
+            {settings.showRating && <div className="feedback-block"><h3>{settings.ratingPrompt}</h3><div className="star-rating" aria-label="Customer rating">{[1,2,3,4,5].map((value) => <button key={value} aria-label={`${value} stars`} className={value <= rating ? "is-selected" : ""} onClick={() => setRating(value)}><Star size={30} fill={value <= rating ? "currentColor" : "none"}/></button>)}</div></div>}
+            {settings.showComments && <label className="feedback-comments"><span>{settings.commentsPrompt}</span><textarea rows={3} value={comments} onChange={(event) => setComments(event.target.value)} placeholder="Tell us how we can improve"/></label>}
+          </> : <div className="feedback-thanks"><Check size={20}/><span>Thanks for helping us improve.</span></div>}
+
+          <div className="community-support"><h3>{settings.supportTitle}</h3><div>{settings.supportLinks.filter((link) => link.enabled && link.url.trim()).map((link) => <a key={link.id} href={link.url} target="_blank" rel="noreferrer"><span>{link.icon}</span>{link.label}</a>)}</div></div>
+
+          {!submitted && !priorFeedback ? <button className="customer-primary thank-you-finish" onClick={submit}>{settings.finishLabel}</button> : <Link className="customer-primary thank-you-finish" to="/">Done</Link>}
+        </section>
+      </main>
+    </div>;
+  }
+
+  return <div className="customer-shell">
+    <header className="customer-header"><div className="customer-header__inner"><img className="customer-brand__logo" src="/seatserve-web-logo.png" alt="SeatServe"/><div className="customer-zone">Order {order.id}</div></div></header>
+    <main className="customer-main">
+      <section className="tracking-hero"><span><PackageCheck size={30}/></span><p>Thanks, {order.customer.name}</p><h1>Your order is in!</h1><strong>Estimated delivery: 15–20 minutes</strong></section>
+      {order.status === "delivering" && <section className="seatbeacon-callout"><div><strong>Runner approaching your zone</strong><span>Activate SeatBeacon and hold your phone up when the runner is nearby.</span></div><button onClick={() => setBeaconActive(true)}>{settings.mascotSymbol} Activate SeatBeacon</button></section>}
+      <section className="customer-panel"><div className="tracking-context"><div><Clock3 size={18}/><span>{event?.name} vs {event?.opponent}</span></div><div><MapPin size={18}/><span>{zone?.name} · {order.location.vertical} {order.location.horizontal}</span></div></div><div className="tracking-steps">{steps.map((step, index) => <div className={`tracking-step ${index <= currentIndex ? "is-complete" : ""}`} key={step}><span>{index <= currentIndex ? <Check size={15}/> : index + 1}</span><div><strong>{names[step]}</strong>{index === currentIndex && <small>Current status</small>}</div></div>)}</div><div className="tracking-order"><h2>Order summary</h2>{order.items.map((item, index) => <div key={`${item.menuItemId}-${index}`}><span>{item.quantity} × {item.name}{item.condiments?.length ? <small> · {item.condiments.join(", ")}</small> : null}</span><strong>${(item.unitPrice * item.quantity).toFixed(2)}</strong></div>)}<div className="tracking-total"><span>Total</span><strong>${order.total.toFixed(2)}</strong></div></div></section>
+    </main>
+    {beaconActive && <div className="seatbeacon" style={{ "--beacon-primary": settings.primaryColor, "--beacon-secondary": settings.secondaryColor } as React.CSSProperties}><button className="seatbeacon__close" onClick={() => setBeaconActive(false)} aria-label="Close SeatBeacon"><X size={28}/></button><div className="seatbeacon__content"><span className="seatbeacon__mascot">{settings.mascotSymbol}</span><p>SeatBeacon Active</p><strong>{order.id}</strong><small>Hold your phone up so your runner can find you.</small></div></div>}
+  </div>;
+}

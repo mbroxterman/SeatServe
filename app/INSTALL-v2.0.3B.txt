@@ -1,0 +1,13 @@
+SeatServe v2.0.3B FULL APP REPLACEMENT
+
+IMPORTANT: The files in this ZIP are the CONTENTS of the app folder.
+Extract this ZIP directly into the folder that contains package.json.
+Replace all matching files.
+
+After extraction, confirm this file exists next to package.json:
+INSTALL-v2.0.3B.txt
+
+Then run:
+  npm run dev
+
+Administration > Settings must show "Checkout & Payments" and the sidebar/footer must show v2.0.3B.

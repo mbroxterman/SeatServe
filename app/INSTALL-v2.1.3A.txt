@@ -1,0 +1,15 @@
+SeatServe v2.1.3A - Pilot Order Landing Route Fix
+
+Install:
+1. Stop npm run dev.
+2. Extract this ZIP directly into the active app folder that contains package.json.
+3. Replace matching files.
+4. Run npm install if needed, then npm run dev.
+5. Hard refresh with Ctrl+F5.
+
+Change:
+- /order now displays a branded SeatServe QR landing page instead of appearing broken.
+- The page shows the current live event when available.
+- Customers are instructed to scan the QR code in their seating zone.
+- No manual zone selector is exposed; zone QR codes remain the required ordering entry point.
+- Existing /order/zone/<venue>/<zone>, event-specific ordering, tracking, Staff QR, PINs, Kitchen, Runner, Google Sheets, and pilot flows are unchanged.

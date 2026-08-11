@@ -1,0 +1,58 @@
+.event-manager-shell { min-height:100vh; background:#f3f6fb; color:#13213d; }
+.event-manager-main { width:min(1240px,calc(100% - 36px)); margin:0 auto; padding:30px 0 50px; }
+.event-manager-topbar { display:flex; justify-content:space-between; align-items:end; gap:24px; margin-bottom:20px; }
+.event-manager-topbar h2 { margin:5px 0; font-size:32px; }
+.event-manager-topbar p:not(.eyebrow) { margin:0; color:#78869c; }
+.back-link { display:inline-flex; align-items:center; gap:4px; text-decoration:none; color:#425a82; font-size:12px; font-weight:800; margin-bottom:14px; }
+.primary-button,.cancel-button { border:0; border-radius:10px; padding:11px 15px; font-weight:850; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:7px; }
+.primary-button { background:#13234b; color:white; box-shadow:0 7px 15px rgba(19,35,75,.15); }
+.cancel-button { background:#edf1f6; color:#35445f; }
+.event-summary-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:16px; }
+.event-summary-grid article { background:white; border:1px solid #dce3ef; border-radius:14px; padding:16px 18px; display:grid; gap:6px; }
+.event-summary-grid span { color:#6f7d94; font-size:12px; }
+.event-summary-grid strong { font-size:26px; }
+.event-summary-grid small { color:#929daf; }
+.events-panel { background:white; border:1px solid #dce3ef; border-radius:15px; overflow:hidden; box-shadow:0 12px 30px rgba(37,55,90,.05); }
+.events-toolbar { padding:16px; display:flex; justify-content:space-between; gap:12px; border-bottom:1px solid #e7ebf2; }
+.search-field { flex:1; max-width:520px; border:1px solid #d7deea; border-radius:10px; display:flex; align-items:center; gap:9px; padding:0 11px; color:#7c899e; background:#fbfcfe; }
+.search-field input { width:100%; border:0; outline:0; background:transparent; padding:11px 0; color:#1a2948; }
+.events-toolbar select,.form-grid select,.form-grid input { border:1px solid #d5dde9; border-radius:9px; background:#fff; padding:10px 11px; color:#1f2f4d; outline:none; }
+.events-toolbar select:focus,.form-grid select:focus,.form-grid input:focus { border-color:#6d8ab6; box-shadow:0 0 0 3px rgba(68,105,160,.1); }
+.event-list-header,.event-row { display:grid; grid-template-columns:1.45fr 1.15fr 1fr .55fr .8fr; gap:14px; align-items:center; }
+.event-list-header { padding:11px 17px; background:#f7f9fc; color:#718099; text-transform:uppercase; letter-spacing:.07em; font-size:9px; font-weight:900; border-bottom:1px solid #e7ebf2; }
+.event-row { padding:15px 17px; border-bottom:1px solid #edf0f5; }
+.event-row:last-child { border-bottom:0; }
+.event-row:hover { background:#fbfcfe; }
+.event-name-cell { display:flex; align-items:center; gap:11px; min-width:0; }
+.event-name-cell>div:last-child { min-width:0; display:grid; gap:4px; }
+.event-name-cell>div:last-child strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+.event-name-cell>div:last-child span { color:#7f8ba0; font-size:11px; }
+.event-date-tile { width:43px; height:45px; border-radius:9px; background:#edf2fb; color:#294b80; display:grid; place-items:center; align-content:center; flex:none; }
+.event-date-tile strong { font-size:17px; line-height:1; }
+.event-date-tile span { text-transform:uppercase; font-size:8px; font-weight:900; }
+.event-detail-cell { display:grid; gap:6px; color:#63718a; font-size:11px; }
+.event-detail-cell span { display:flex; align-items:center; gap:6px; }
+.event-status { display:inline-flex; border-radius:999px; padding:5px 8px; font-size:9px; font-weight:900; }
+.event-status--draft { background:#eef1f5; color:#68768b; }
+.event-status--scheduled { background:#e8f0ff; color:#315d9a; }
+.event-status--live { background:#e4f8ed; color:#16864c; }
+.event-status--completed { background:#eaf7f0; color:#34765a; }
+.event-status--cancelled { background:#fdeced; color:#af3d47; }
+.row-actions { display:flex; justify-content:flex-end; gap:4px; }
+.row-actions button,.modal-header button { border:0; background:transparent; color:#69778f; width:31px; height:31px; display:grid; place-items:center; border-radius:8px; cursor:pointer; }
+.row-actions button:hover,.modal-header button:hover { background:#edf2f8; color:#1f3c6a; }
+.empty-state { padding:54px 20px; text-align:center; color:#8190a6; }
+.empty-state h3 { color:#263653; margin:10px 0 4px; }
+.empty-state p { margin:0; }
+.modal-backdrop { position:fixed; inset:0; background:rgba(13,23,47,.58); display:grid; place-items:center; padding:20px; z-index:20; }
+.event-modal { width:min(680px,100%); max-height:calc(100vh - 40px); overflow:auto; background:#fff; border-radius:16px; box-shadow:0 25px 70px rgba(5,14,34,.3); }
+.modal-header { display:flex; justify-content:space-between; align-items:flex-start; padding:20px 22px 15px; border-bottom:1px solid #e6eaf1; }
+.modal-header h3 { margin:4px 0 0; font-size:21px; }
+.event-modal form { padding:20px 22px 22px; }
+.form-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:14px; }
+.form-grid label { display:grid; gap:6px; font-size:11px; font-weight:850; color:#53627a; }
+.form-grid .span-2 { grid-column:1 / -1; }
+.form-error { margin-top:14px; padding:10px 12px; border-radius:8px; background:#fff0f1; color:#a23742; font-size:12px; font-weight:700; }
+.modal-footer { display:flex; justify-content:flex-end; gap:9px; margin-top:20px; }
+@media(max-width:980px){.event-summary-grid{grid-template-columns:repeat(2,1fr)}.event-list-header{display:none}.event-row{grid-template-columns:1fr 1fr;align-items:start}.row-actions{justify-content:flex-start}.event-row>div:nth-child(4){justify-self:end}}
+@media(max-width:650px){.event-manager-main{width:min(100% - 24px,1240px);padding-top:22px}.event-manager-topbar{align-items:stretch;flex-direction:column}.primary-button{width:100%}.event-summary-grid{grid-template-columns:1fr 1fr}.events-toolbar{flex-direction:column}.search-field{max-width:none}.event-row{grid-template-columns:1fr}.event-row>div:nth-child(4){justify-self:start}.form-grid{grid-template-columns:1fr}.form-grid .span-2{grid-column:auto}.modal-footer{flex-direction:column-reverse}.cancel-button{width:100%}}

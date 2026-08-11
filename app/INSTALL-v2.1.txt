@@ -1,0 +1,40 @@
+SeatServe v2.1 - Pilot Candidate
+
+INSTALL
+1. Stop npm run dev.
+2. Extract this ZIP directly into the active app folder that contains package.json.
+3. Replace matching files.
+4. Run: npm install
+5. Run: npm run build
+6. Run: npm run dev
+7. Hard refresh the browser (Ctrl+F5).
+
+PILOT TEST MATRIX
+A. Workspace isolation
+- Switch Production -> Dev -> Production and verify menus/events/orders do not mix.
+
+B. Customer order
+- Place one exact-cash order and one card-at-delivery order.
+- Close/reopen the tracking tab and verify the order returns.
+
+C. Kitchen + Runner
+- Receive -> Preparing -> Ready -> Assign runner -> Pickup -> Delivering.
+- Confirm payment collection is required before Delivered.
+- Request SeatBeacon and confirm customer activation is visible to Runner Mobile.
+- Mark Customer Located -> Delivered -> Returning -> Available.
+
+D. Live updates
+- Keep Customer, Kitchen, and Runner in separate tabs/windows.
+- Verify status changes appear without manual refresh.
+- If using separate devices, verify Google Sheets sync is connected first.
+
+E. Recovery
+- Refresh each application during an active order.
+- Verify the same active order/status returns.
+- Temporarily disable network access and verify local operation continues.
+
+F. Delivered experience
+- Verify SeatBeacon stops automatically at Delivered.
+- Verify customer transitions to Thank You + rating/comments + Booster Club links.
+
+After v2.1, do not add features before the pilot. Log defects and issue targeted v2.1.x fixes only.

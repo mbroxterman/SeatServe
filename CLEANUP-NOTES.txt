@@ -1,0 +1,25 @@
+SeatServe v2.0 Pilot Clean Baseline
+
+Kept:
+- app/src
+- app/public
+- app/google-apps-script
+- package.json and package-lock.json
+- Vite, TypeScript, ESLint configuration
+- current README files
+- project documentation
+
+Removed from this clean replacement:
+- node_modules (recreated by npm install)
+- dist (recreated by npm run build)
+- old extracted feature-package folders
+- obsolete per-release README text files
+- duplicate root package-lock.json
+- Git metadata (.git) so replacing files will not overwrite repository history
+
+Installation:
+1. Back up the current SeatServe folder.
+2. Keep the existing .git folder if you use Git.
+3. Replace the current app folder with the app folder in this package.
+4. In app, run: npm install
+5. Run: npm run dev

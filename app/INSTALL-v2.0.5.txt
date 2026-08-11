@@ -1,0 +1,17 @@
+SeatServe v2.0.5 - Customer + SeatBeacon Finalization
+
+1. Stop npm run dev.
+2. Extract this ZIP directly into the active app folder containing package.json.
+3. Replace matching files.
+4. Run: npm install
+5. Run: npm run dev
+6. Refresh with Ctrl+F5.
+
+Pilot test:
+- Place an order.
+- Move it through Kitchen Operations to Out for Delivery.
+- Runner Mobile: Request SeatBeacon.
+- Customer tracking updates automatically and highlights Activate SeatBeacon.
+- Customer activates the navy/silver beacon.
+- Runner taps Customer Located, collects payment, then Delivered.
+- Customer automatically leaves SeatBeacon and sees the thank-you / feedback screen.

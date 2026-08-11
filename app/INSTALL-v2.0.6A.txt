@@ -1,0 +1,21 @@
+SeatServe v2.0.6A - SeatBeacon Attention Patch
+
+Install
+1. Stop npm run dev.
+2. Extract this ZIP directly into the active app folder containing package.json.
+3. Replace matching files.
+4. Run npm install (if needed) and npm run dev.
+5. Hard refresh the browser.
+
+SeatBeacon test
+1. Move an order to Out for Delivery.
+2. In Runner Mobile, request SeatBeacon.
+3. Customer tracking should emphasize the SeatBeacon prompt and may vibrate once on supported devices.
+4. Tap Activate SeatBeacon. The navy/silver screen starts flashing immediately.
+5. On supported browsers, vibration starts immediately and repeats briefly for up to 30 seconds.
+6. The customer can stop/start vibration without closing SeatBeacon.
+7. Mark the order Delivered. SeatBeacon closes automatically and vibration stops, then the delivered thank-you screen appears.
+
+Notes
+- Web vibration support varies by browser/device; iPhone/iOS browsers generally do not expose the standard Vibration API.
+- prefers-reduced-motion disables the flashing animation while keeping a high-contrast static SeatBeacon.

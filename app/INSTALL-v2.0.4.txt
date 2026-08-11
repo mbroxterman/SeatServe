@@ -1,0 +1,13 @@
+SeatServe v2.0.4 - Payment at Delivery Flow
+
+Extract directly into the active app folder containing package.json.
+
+Adds:
+- exact cash vs credit card at delivery totals
+- payment method saved on each order
+- customer tracking payment instructions
+- Kitchen Operations payment visibility
+- Runner Mobile amount-to-collect panel
+- runner payment-collected confirmation before delivery can be completed
+
+Run: npm install && npm run dev

@@ -1,0 +1,21 @@
+SeatServe v2.0.7 - Reporting + Administration Cleanup
+
+INSTALL
+1. Stop npm run dev.
+2. Extract this ZIP directly into the active app folder containing package.json.
+3. Replace matching files.
+4. Run: npm install
+5. Run: npm run dev
+6. Hard refresh the browser (Ctrl+F5).
+
+WHAT TO TEST
+- Administration footer/sidebar should show v2.0.7.
+- Reports is now a working page, not a placeholder.
+- Select the Live event and verify order/payment/runner/zone metrics.
+- Export CSV from Reports.
+- Menu Management > Event Assignments should show only Live, Scheduled, and Draft events from the current workspace, with Live first.
+- Dashboard figures should use the current Live/next event rather than all workspace orders.
+- Settings > Workspace data health should report stale links and offer a safe repair when needed.
+
+ROADMAP RULE
+v2.0.7 is Reporting + Admin Cleanup only. No architecture changes were introduced.

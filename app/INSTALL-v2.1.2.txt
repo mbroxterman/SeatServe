@@ -1,0 +1,25 @@
+SeatServe v2.1.2 - Pilot QR Generator
+
+INSTALL
+1. Stop npm run dev.
+2. Extract this ZIP directly into the active app folder containing package.json.
+3. Replace matching files.
+4. Run: npm install
+5. Run: npm run dev
+6. Refresh with Ctrl+F5.
+
+WHAT CHANGED
+- Administration > QR & Customer now generates QR codes.
+- One STAFF ONLY QR opens /staff.
+- Each active delivery zone gets a permanent QR using /order/zone/:venueId/:zoneId.
+- Permanent zone links resolve the current live event automatically, so signs can be reused across Football, Basketball, etc.
+- Individual QR codes can be tested, copied, downloaded as PNG, or printed.
+- Print all QR codes or print one venue at a time.
+- Venue & Zones copy/test links now use the same permanent zone URLs.
+- Added a staff entry page with Kitchen Operations, Runner Mobile, and Administration choices.
+- Administration version updated to v2.1.2.
+
+IMPORTANT
+- Run npm install because v2.1.2 adds the qrcode package used to generate QR images locally in the browser.
+- Generate/print final QR signs after deploying to Netlify so the QR contains the production website address, not localhost.
+- The Staff QR is a routing shortcut only. It does not provide authentication or grant permissions.

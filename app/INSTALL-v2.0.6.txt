@@ -1,0 +1,31 @@
+SeatServe v2.0.6 - Kitchen + Runner Hardening
+
+INSTALL
+1. Stop npm run dev.
+2. Extract this ZIP directly into the active app folder that contains package.json.
+3. Replace matching files.
+4. Run: npm install
+5. Run: npm run dev
+6. Refresh with Ctrl+F5.
+
+PILOT HARDENING INCLUDED
+- Kitchen and Runner use guarded order-state transitions.
+- Payment-at-delivery must be collected before an order can be marked delivered.
+- Orders cannot leave the kitchen without a runner.
+- Busy/returning runner states are system-controlled; runners only choose Available or Unavailable when idle.
+- Manual runner assignment cannot double-book an unavailable runner.
+- Returning runners are automatically matched to the oldest queued Ready order for the current Live event.
+- Kitchen bulk Auto Assign now works for Ready orders.
+- Kitchen order columns no longer hide orders behind a dead '+ more' control; the control expands/collapses correctly.
+- Kitchen no longer contains dead Hold/Print/Filter controls.
+- Runner pickup, payment, SeatBeacon, customer-located, delivery, and return-to-kitchen are the authoritative delivery actions.
+- Kitchen shows runner handoff progress but does not bypass Runner Mobile delivery steps.
+- Stale runner active-order references no longer reopen an old delivery after the runner is available.
+
+PILOT TEST
+A. Put two runners Available.
+B. Put 3 orders Ready and use Auto Assign Ready.
+C. Confirm only available runners are assigned and remaining order queues.
+D. Runner 1 confirms pickup, requests SeatBeacon, confirms payment, locates customer, and marks Delivered.
+E. Runner 1 taps 'I'm back at the kitchen'. The oldest queued Ready order should auto-assign.
+F. Verify Kitchen updates automatically and Delivered remains current-event only.
