@@ -1,0 +1,30 @@
+SeatServe v2.1.6C - Cloud Sync Diagnostics
+
+Purpose
+- Make the Netlify / Google Apps Script connection status explicit instead of only showing a generic Sync failed badge.
+
+What changed
+- Added Test connection to Administration > Settings > Active workspace.
+- Records the last connection/sync/load attempt time.
+- Records HTTP status and response time when available.
+- Records the Apps Script schema version returned by Google.
+- Shows the remote workspace name.
+- Shows the exact last sync error in Connection diagnostics.
+- The top Sync failed badge now surfaces the latest error text.
+- Keeps v2.1.6B menu image protections and reliability fixes.
+
+Apps Script
+1. Replace the deployed Code.gs with google-apps-script/Code.gs from this package.
+2. Deploy > Manage deployments > Edit > New version > Deploy.
+3. Keep the same /exec URL.
+
+Netlify
+- VITE_SEATSERVE_API_URL remains the production endpoint.
+- No environment variable names changed.
+
+Recommended test
+1. Open Administration > Settings.
+2. Click Test connection.
+3. Review Connection diagnostics.
+4. Click Sync now.
+5. Confirm Last successful sync changes and the SeatServe Data tab heartbeat updates.

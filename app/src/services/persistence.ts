@@ -40,6 +40,12 @@ export interface SyncMeta {
   pendingChanges: boolean;
   lastConnectionTestAt?: string;
   remoteWorkspaceName?: string;
+  lastAttemptAt?: string;
+  lastAttemptAction?: "test" | "sync" | "load";
+  lastHttpStatus?: number;
+  lastResponseMs?: number;
+  lastSchemaVersion?: number;
+  lastAttemptMessage?: string;
 }
 
 export interface RemoteEnvelope {
@@ -280,32 +286,75 @@ export function restoreLocalBackup(key: string): SeatServeData {
 
 async function parseResponse(response: Response): Promise<RemoteEnvelope> {
   const text = await response.text();
-  try { return JSON.parse(text) as RemoteEnvelope; }
-  catch { throw new Error(`Sync endpoint returned an invalid response (${response.status}).`); }
+  try {
+    const parsed = JSON.parse(text) as RemoteEnvelope;
+    if (!response.ok && parsed.ok !== true) throw new Error(parsed.message ?? `HTTP ${response.status} ${response.statusText || "request failed"}`);
+    return parsed;
+  } catch (error) {
+    if (error instanceof Error && !error.message.startsWith("Unexpected token")) throw error;
+    const preview = text.replace(/\s+/g, " ").trim().slice(0, 180);
+    throw new Error(`Sync endpoint returned an invalid response (HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""})${preview ? `: ${preview}` : "."}`);
+  }
+}
+
+function beginSyncAttempt(action: "test" | "sync" | "load"): number {
+  saveSyncMeta({ ...getSyncMeta(), state: "saving", lastError: undefined, lastAttemptAt: new Date().toISOString(), lastAttemptAction: action, lastAttemptMessage: undefined });
+  return performance.now();
+}
+
+function finishSyncAttempt(startedAt: number, response: Response, result: RemoteEnvelope, patch: Partial<SyncMeta> = {}): void {
+  saveSyncMeta({
+    ...getSyncMeta(),
+    ...patch,
+    lastHttpStatus: response.status,
+    lastResponseMs: Math.max(0, Math.round(performance.now() - startedAt)),
+    lastSchemaVersion: result.schemaVersion,
+    lastAttemptMessage: result.message || (result.ok ? "Request completed successfully." : "Request failed."),
+  });
+}
+
+function failSyncAttempt(startedAt: number, action: "test" | "sync" | "load", error: unknown, response?: Response): never {
+  const message = error instanceof Error ? error.message : "Google Sheets request failed.";
+  saveSyncMeta({
+    ...getSyncMeta(), state: "error", lastError: message,
+    lastAttemptAt: getSyncMeta().lastAttemptAt ?? new Date().toISOString(), lastAttemptAction: action,
+    lastHttpStatus: response?.status, lastResponseMs: Math.max(0, Math.round(performance.now() - startedAt)), lastAttemptMessage: message,
+  });
+  throw error instanceof Error ? error : new Error(message);
 }
 function requireEndpoint(): SyncConfig { const config = getSyncConfig(); if (!config.endpointUrl.trim()) throw new Error("Add the Google Apps Script web app URL first."); return config; }
 
 export async function testGoogleSheetsConnection(endpointUrl: string, workspaceName: string): Promise<RemoteEnvelope> {
   const normalized = endpointUrl.trim(); if (!normalized) throw new Error("Enter the Google Apps Script web app URL.");
-  const separator = normalized.includes("?") ? "&" : "?";
-  const response = await fetch(`${normalized}${separator}action=status&workspace=${encodeURIComponent(workspaceName)}&cacheBust=${Date.now()}`);
-  const result = await parseResponse(response); if (!result.ok) throw new Error(result.message ?? "Google Sheets connection failed.");
-  const now = new Date().toISOString();
-  saveSyncMeta({ ...getSyncMeta(), state: "saved", lastConnectionTestAt: now, lastRemoteUpdatedAt: result.updatedAt || getSyncMeta().lastRemoteUpdatedAt, remoteWorkspaceName: result.workspaceName || workspaceName, lastError: undefined });
-  return result;
+  const startedAt = beginSyncAttempt("test");
+  let response: Response | undefined;
+  try {
+    const separator = normalized.includes("?") ? "&" : "?";
+    response = await fetch(`${normalized}${separator}action=status&workspace=${encodeURIComponent(workspaceName)}&cacheBust=${Date.now()}`);
+    const result = await parseResponse(response); if (!result.ok) throw new Error(result.message ?? "Google Sheets connection failed.");
+    const now = new Date().toISOString();
+    finishSyncAttempt(startedAt, response, result, { state: "saved", lastConnectionTestAt: now, lastRemoteUpdatedAt: result.updatedAt || getSyncMeta().lastRemoteUpdatedAt, remoteWorkspaceName: result.workspaceName || workspaceName, lastError: undefined });
+    return result;
+  } catch (error) { return failSyncAttempt(startedAt, "test", error, response); }
 }
 
 export async function pushToGoogleSheets(data: SeatServeData, force = false): Promise<RemoteEnvelope> {
-  const config = requireEndpoint(); const meta = getSyncMeta(); saveSyncMeta({ ...meta, state: "saving", lastError: undefined });
+  const config = requireEndpoint(); const meta = getSyncMeta(); const startedAt = beginSyncAttempt("sync");
+  let response: Response | undefined;
   try {
-    const response = await fetch(config.endpointUrl.trim(), { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "save", data, workspaceName: config.workspaceName, clientUpdatedAt: meta.lastLocalChangeAt ?? new Date().toISOString(), lastKnownRemoteUpdatedAt: meta.lastRemoteUpdatedAt, force }) });
+    response = await fetch(config.endpointUrl.trim(), { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "save", data, workspaceName: config.workspaceName, clientUpdatedAt: meta.lastLocalChangeAt ?? new Date().toISOString(), lastKnownRemoteUpdatedAt: meta.lastRemoteUpdatedAt, force }) });
     const result = await parseResponse(response);
-    if (result.conflict) { saveSyncMeta({ ...getSyncMeta(), state: "conflict", pendingChanges: true, lastError: result.message ?? "Remote data is newer." }); return result; }
+    if (result.conflict) { finishSyncAttempt(startedAt, response, result, { state: "conflict", pendingChanges: true, lastError: result.message ?? "Remote data is newer." }); return result; }
     if (!result.ok) throw new Error(result.message ?? "Google Sheets sync failed.");
-    if (result.schemaVersion !== undefined && result.schemaVersion < 7) throw new Error("Google Apps Script is out of date. Replace Code.gs with the v2.1.6B version and redeploy a new web-app version.");
+    if (result.schemaVersion !== undefined && result.schemaVersion < 7) throw new Error("Google Apps Script is out of date. Replace Code.gs with the v2.1.6C version and redeploy a new web-app version.");
     if (result.menuItemCount !== undefined && result.menuItemCount !== data.menuItems.length) throw new Error(`Google Sheets saved ${result.menuItemCount} menu items, but SeatServe sent ${data.menuItems.length}. Please redeploy Code.gs and try Sync now again.`);
-    const now = new Date().toISOString(); saveSyncMeta({ ...getSyncMeta(), state: "saved", pendingChanges: false, lastSuccessfulSyncAt: now, lastRemoteUpdatedAt: result.updatedAt ?? now, remoteWorkspaceName: result.workspaceName ?? config.workspaceName, lastError: undefined }); return result;
-  } catch (error) { const message = error instanceof Error ? error.message : "Google Sheets sync failed."; saveSyncMeta({ ...getSyncMeta(), state: "error", pendingChanges: true, lastError: message }); throw error; }
+    const now = new Date().toISOString();
+    finishSyncAttempt(startedAt, response, result, { state: "saved", pendingChanges: false, lastSuccessfulSyncAt: now, lastRemoteUpdatedAt: result.updatedAt ?? now, remoteWorkspaceName: result.workspaceName ?? config.workspaceName, lastError: undefined });
+    return result;
+  } catch (error) {
+    saveSyncMeta({ ...getSyncMeta(), pendingChanges: true });
+    return failSyncAttempt(startedAt, "sync", error, response);
+  }
 }
 
 
@@ -331,14 +380,18 @@ export async function pollGoogleSheets(currentData: SeatServeData): Promise<Remo
 }
 
 export async function pullFromGoogleSheets(currentData: SeatServeData): Promise<RemoteEnvelope> {
-  const config = requireEndpoint(); createLocalBackup(currentData, "before-sheet-load"); saveSyncMeta({ ...getSyncMeta(), state: "saving", lastError: undefined });
+  const config = requireEndpoint(); createLocalBackup(currentData, "before-sheet-load"); const startedAt = beginSyncAttempt("load");
+  let response: Response | undefined;
   try {
     const separator = config.endpointUrl.includes("?") ? "&" : "?";
-    const response = await fetch(`${config.endpointUrl.trim()}${separator}action=load&workspace=${encodeURIComponent(config.workspaceName)}&cacheBust=${Date.now()}`);
+    response = await fetch(`${config.endpointUrl.trim()}${separator}action=load&workspace=${encodeURIComponent(config.workspaceName)}&cacheBust=${Date.now()}`);
     const result = await parseResponse(response); if (!result.ok || !result.data) throw new Error(result.message ?? "No SeatServe data was found in Google Sheets.");
-    const now = new Date().toISOString(); saveSyncMeta({ ...getSyncMeta(), state: "saved", pendingChanges: false, lastSuccessfulSyncAt: now, lastRemoteUpdatedAt: result.updatedAt ?? now, remoteWorkspaceName: result.workspaceName ?? config.workspaceName, lastError: undefined }); return result;
-  } catch (error) { const message = error instanceof Error ? error.message : "Google Sheets load failed."; saveSyncMeta({ ...getSyncMeta(), state: "error", lastError: message }); throw error; }
+    const now = new Date().toISOString();
+    finishSyncAttempt(startedAt, response, result, { state: "saved", pendingChanges: false, lastSuccessfulSyncAt: now, lastRemoteUpdatedAt: result.updatedAt ?? now, remoteWorkspaceName: result.workspaceName ?? config.workspaceName, lastError: undefined });
+    return result;
+  } catch (error) { return failSyncAttempt(startedAt, "load", error, response); }
 }
+
 
 export function downloadJsonBackup(data: SeatServeData): void {
   const blob = new Blob([JSON.stringify({ version: 3, workspace: getActiveWorkspace(), exportedAt: new Date().toISOString(), data }, null, 2)], { type: "application/json" });

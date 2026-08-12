@@ -78,7 +78,7 @@ function save_(request) {
     ['lastSyncAt', updatedAt],
     ['lastSyncStatus', 'success'],
     ['lastSyncSource', 'SeatServe Netlify / app'],
-    ['appVersion', 'v2.1.6B'],
+    ['appVersion', 'v2.1.6C'],
     ['workspaceName', workspaceName]
   ]);
 
