@@ -15,7 +15,9 @@ const STRUCTURED_SHEETS = [
   'Customer Feedback',
   'Workspace Settings',
   'Community Support',
-  'Activity'
+  'Activity',
+  'Archived Orders',
+  'Archived Feedback'
 ];
 
 function doGet(e) {
@@ -50,7 +52,7 @@ function status_(requestedWorkspaceName) {
     updatedAt: getMeta_(metaSheet, 'updatedAt') || '',
     spreadsheetName: ss.getName(),
     structuredSync: true,
-    schemaVersion: 4
+    schemaVersion: 5
   });
 }
 
@@ -64,7 +66,9 @@ function save_(request) {
     return json_({ ok: false, conflict: true, updatedAt: remoteUpdatedAt, message: 'Google Sheets was changed after the browser last synchronized.' });
   }
 
-  const data = request.data || {};
+  const incomingData = request.data || {};
+  storeActiveContacts_(incomingData.orders || []);
+  const data = sanitizeForSheets_(incomingData);
   const updatedAt = new Date().toISOString();
   const workspaceName = request.workspaceName || getMeta_(metaSheet, 'workspaceName') || ss.getName();
 
@@ -77,11 +81,11 @@ function save_(request) {
   setMeta_(metaSheet, 'workspaceName', workspaceName);
   setMeta_(metaSheet, 'updatedAt', updatedAt);
   setMeta_(metaSheet, 'clientUpdatedAt', request.clientUpdatedAt || updatedAt);
-  setMeta_(metaSheet, 'schemaVersion', '4');
+  setMeta_(metaSheet, 'schemaVersion', '5');
   setMeta_(metaSheet, 'lastWriteSource', 'SeatServe app');
   SpreadsheetApp.flush();
 
-  return json_({ ok: true, updatedAt: updatedAt, workspaceName: workspaceName, structuredSync: true, schemaVersion: 4 });
+  return json_({ ok: true, updatedAt: updatedAt, workspaceName: workspaceName, structuredSync: true, schemaVersion: 5 });
 }
 
 function load_() {
@@ -91,14 +95,14 @@ function load_() {
   let source = 'structured';
 
   try {
-    data = readStructuredData_(ss);
+    data = restoreActiveContacts_(readStructuredData_(ss));
   } catch (error) {
     source = 'json-backup';
     const dataSheet = getOrCreate_(ss, DATA_SHEET, ['key', 'json']);
     const rows = dataSheet.getDataRange().getValues();
     const row = rows.slice(1).find(function(item) { return item[0] === 'seatserve'; });
     if (!row || !row[1]) throw error;
-    data = JSON.parse(row[1]);
+    data = restoreActiveContacts_(JSON.parse(row[1]));
   }
 
   return json_({
@@ -108,7 +112,7 @@ function load_() {
     workspaceName: getMeta_(metaSheet, 'workspaceName') || ss.getName(),
     source: source,
     structuredSync: true,
-    schemaVersion: 4
+    schemaVersion: 5
   });
 }
 
@@ -151,16 +155,19 @@ function writeStructuredData_(ss, data) {
   }));
 
   writeTable_(ss, 'Orders', [
-    'id','eventId','runnerId','status','customerName','customerMobile','venueId','zoneId','vertical','horizontal','locationNotes','itemsJson','subtotal','tax','deliveryFee','total','paymentMethod','cashTotal','estimatedCardFee','cardTotal','paymentCollectedAt','seatBeaconRequestedAt','seatBeaconOpenedAt','customerLocatedAt','placedAt','acceptedAt','preparingAt','readyAt','assignedAt','deliveringAt','deliveredAt','assignmentQueuedAt'
+    'id','eventId','runnerId','status','fulfillmentMethod','customerName','venueId','zoneId','vertical','horizontal','locationNotes','itemsJson','subtotal','tax','deliveryFee','total','paymentMethod','cashTotal','estimatedCardFee','cardTotal','paymentCollectedAt','seatBeaconRequestedAt','seatBeaconOpenedAt','customerLocatedAt','placedAt','acceptedAt','preparingAt','readyAt','assignedAt','deliveringAt','deliveredAt','assignmentQueuedAt'
   ], (data.orders || []).map(function(x) {
     const customer = x.customer || {};
     const location = x.location || {};
-    return [x.id,x.eventId,x.runnerId || '',x.status,customer.name || '',customer.mobile || '',location.venueId || '',location.zoneId || '',location.vertical || '',location.horizontal || '',location.notes || '',JSON.stringify(x.items || []),number_(x.subtotal),number_(x.tax),number_(x.deliveryFee),number_(x.total),x.paymentMethod || '',nullableNumber_(x.cashTotal),nullableNumber_(x.estimatedCardFee),nullableNumber_(x.cardTotal),x.paymentCollectedAt || '',x.seatBeaconRequestedAt || '',x.seatBeaconOpenedAt || '',x.customerLocatedAt || '',x.placedAt || '',x.acceptedAt || '',x.preparingAt || '',x.readyAt || '',x.assignedAt || '',x.deliveringAt || '',x.deliveredAt || '',x.assignmentQueuedAt || ''];
+    return [x.id,x.eventId,x.runnerId || '',x.status,x.fulfillmentMethod || 'delivery',customer.name || '',location.venueId || '',location.zoneId || '',location.vertical || '',location.horizontal || '',location.notes || '',JSON.stringify(x.items || []),number_(x.subtotal),number_(x.tax),number_(x.deliveryFee),number_(x.total),x.paymentMethod || '',nullableNumber_(x.cashTotal),nullableNumber_(x.estimatedCardFee),nullableNumber_(x.cardTotal),x.paymentCollectedAt || '',x.seatBeaconRequestedAt || '',x.seatBeaconOpenedAt || '',x.customerLocatedAt || '',x.placedAt || '',x.acceptedAt || '',x.preparingAt || '',x.readyAt || '',x.assignedAt || '',x.deliveringAt || '',x.deliveredAt || '',x.assignmentQueuedAt || ''];
   }));
 
   writeTable_(ss, 'Customer Feedback', ['id','orderId','eventId','rating','comments','submittedAt'], (data.feedback || []).map(function(x) {
     return [x.id,x.orderId,x.eventId,nullableNumber_(x.rating),x.comments || '',x.submittedAt || ''];
   }));
+
+  writeTable_(ss, 'Archived Orders', ['id','eventId','runnerId','status','fulfillmentMethod','customerName','venueId','zoneId','itemsJson','total','paymentMethod','placedAt','deliveredAt'], (data.archivedOrders || []).map(function(x) { var c=x.customer||{}, l=x.location||{}; return [x.id,x.eventId,x.runnerId||'',x.status,x.fulfillmentMethod||'delivery',c.name||'',l.venueId||'',l.zoneId||'',JSON.stringify(x.items||[]),number_(x.total),x.paymentMethod||'',x.placedAt||'',x.deliveredAt||'']; }));
+  writeTable_(ss, 'Archived Feedback', ['id','orderId','eventId','rating','comments','submittedAt'], (data.archivedFeedback || []).map(function(x) { return [x.id,x.orderId,x.eventId,nullableNumber_(x.rating),x.comments||'',x.submittedAt||'']; }));
 
   const ce = data.customerExperience || {};
   writeTable_(ss, 'Workspace Settings', ['key','value'], [
@@ -182,6 +189,9 @@ function writeStructuredData_(ss, data) {
     ['estimatedCardFeeFixed', number_(ce.estimatedCardFeeFixed)],
     ['cashPaymentsEnabled', boolean_(ce.cashPaymentsEnabled)],
     ['cardPaymentsEnabled', boolean_(ce.cardPaymentsEnabled)],
+    ['pickupEnabled', boolean_(ce.pickupEnabled)],
+    ['pickupLocationName', ce.pickupLocationName || ''],
+    ['pickupInstructions', ce.pickupInstructions || ''],
     ['staffAdminPinHash', (data.staffAccess && data.staffAccess.adminPinHash) || ''],
     ['staffKitchenPinHash', (data.staffAccess && data.staffAccess.kitchenPinHash) || ''],
     ['staffRunnerPinHash', (data.staffAccess && data.staffAccess.runnerPinHash) || '']
@@ -237,7 +247,7 @@ function readStructuredData_(ss) {
   }; });
 
   const orders = rowsAsObjects_(ss, 'Orders').filter(hasId_).map(function(x) { return {
-    id:string_(x.id), eventId:string_(x.eventId), runnerId:optionalString_(x.runnerId), items:parseJson_(x.itemsJson, []), customer:{ name:string_(x.customerName), mobile:optionalString_(x.customerMobile) }, location:{ venueId:string_(x.venueId), zoneId:string_(x.zoneId), vertical:string_(x.vertical), horizontal:string_(x.horizontal), notes:optionalString_(x.locationNotes) }, subtotal:number_(x.subtotal), tax:number_(x.tax), total:number_(x.total), deliveryFee:number_(x.deliveryFee), paymentMethod:optionalString_(x.paymentMethod), cashTotal:optionalNumber_(x.cashTotal), estimatedCardFee:optionalNumber_(x.estimatedCardFee), cardTotal:optionalNumber_(x.cardTotal), paymentCollectedAt:optionalString_(x.paymentCollectedAt), seatBeaconRequestedAt:optionalString_(x.seatBeaconRequestedAt), seatBeaconOpenedAt:optionalString_(x.seatBeaconOpenedAt), customerLocatedAt:optionalString_(x.customerLocatedAt), status:string_(x.status), placedAt:string_(x.placedAt), acceptedAt:optionalString_(x.acceptedAt), preparingAt:optionalString_(x.preparingAt), readyAt:optionalString_(x.readyAt), assignedAt:optionalString_(x.assignedAt), deliveringAt:optionalString_(x.deliveringAt), deliveredAt:optionalString_(x.deliveredAt), assignmentQueuedAt:optionalString_(x.assignmentQueuedAt)
+    id:string_(x.id), eventId:string_(x.eventId), runnerId:optionalString_(x.runnerId), fulfillmentMethod:string_(x.fulfillmentMethod) || 'delivery', items:parseJson_(x.itemsJson, []), customer:{ name:string_(x.customerName) }, location:{ venueId:string_(x.venueId), zoneId:string_(x.zoneId), vertical:string_(x.vertical), horizontal:string_(x.horizontal), notes:optionalString_(x.locationNotes) }, subtotal:number_(x.subtotal), tax:number_(x.tax), total:number_(x.total), deliveryFee:number_(x.deliveryFee), paymentMethod:optionalString_(x.paymentMethod), cashTotal:optionalNumber_(x.cashTotal), estimatedCardFee:optionalNumber_(x.estimatedCardFee), cardTotal:optionalNumber_(x.cardTotal), paymentCollectedAt:optionalString_(x.paymentCollectedAt), seatBeaconRequestedAt:optionalString_(x.seatBeaconRequestedAt), seatBeaconOpenedAt:optionalString_(x.seatBeaconOpenedAt), customerLocatedAt:optionalString_(x.customerLocatedAt), status:string_(x.status), placedAt:string_(x.placedAt), acceptedAt:optionalString_(x.acceptedAt), preparingAt:optionalString_(x.preparingAt), readyAt:optionalString_(x.readyAt), assignedAt:optionalString_(x.assignedAt), deliveringAt:optionalString_(x.deliveringAt), deliveredAt:optionalString_(x.deliveredAt), assignmentQueuedAt:optionalString_(x.assignmentQueuedAt)
   }; });
 
   const feedback = rowsAsObjects_(ss, 'Customer Feedback').filter(hasId_).map(function(x) { return { id:string_(x.id), orderId:string_(x.orderId), eventId:string_(x.eventId), rating:optionalNumber_(x.rating), comments:optionalString_(x.comments), submittedAt:string_(x.submittedAt) }; });
@@ -247,12 +257,14 @@ function readStructuredData_(ss) {
   const supportLinks = rowsAsObjects_(ss, 'Community Support').filter(hasId_).map(function(x) { return { id:string_(x.id), label:string_(x.label), url:string_(x.url), icon:string_(x.icon), enabled:bool_(x.enabled), __displayOrder:number_(x.displayOrder) }; }).sort(function(a,b) { return a.__displayOrder - b.__displayOrder; }).map(function(x) { delete x.__displayOrder; return x; });
 
   const customerExperience = {
-    headline:string_(settings.headline), message:string_(settings.message), schoolMessage:string_(settings.schoolMessage), ratingPrompt:string_(settings.ratingPrompt), commentsPrompt:string_(settings.commentsPrompt), supportTitle:string_(settings.supportTitle), finishLabel:string_(settings.finishLabel), showRating:bool_(settings.showRating), showComments:bool_(settings.showComments), mascotSymbol:string_(settings.mascotSymbol), primaryColor:string_(settings.primaryColor), secondaryColor:string_(settings.secondaryColor), supportLinks:supportLinks, deliveryFee:number_(settings.deliveryFee), taxRatePercent:number_(settings.taxRatePercent), estimatedCardFeePercent:number_(settings.estimatedCardFeePercent), estimatedCardFeeFixed:number_(settings.estimatedCardFeeFixed), cashPaymentsEnabled:bool_(settings.cashPaymentsEnabled), cardPaymentsEnabled:bool_(settings.cardPaymentsEnabled)
+    headline:string_(settings.headline), message:string_(settings.message), schoolMessage:string_(settings.schoolMessage), ratingPrompt:string_(settings.ratingPrompt), commentsPrompt:string_(settings.commentsPrompt), supportTitle:string_(settings.supportTitle), finishLabel:string_(settings.finishLabel), showRating:bool_(settings.showRating), showComments:bool_(settings.showComments), mascotSymbol:string_(settings.mascotSymbol), primaryColor:string_(settings.primaryColor), secondaryColor:string_(settings.secondaryColor), supportLinks:supportLinks, deliveryFee:number_(settings.deliveryFee), taxRatePercent:number_(settings.taxRatePercent), estimatedCardFeePercent:number_(settings.estimatedCardFeePercent), estimatedCardFeeFixed:number_(settings.estimatedCardFeeFixed), cashPaymentsEnabled:bool_(settings.cashPaymentsEnabled), cardPaymentsEnabled:bool_(settings.cardPaymentsEnabled), pickupEnabled:bool_(settings.pickupEnabled), pickupLocationName:string_(settings.pickupLocationName), pickupInstructions:string_(settings.pickupInstructions)
   };
 
   const staffAccess = { adminPinHash:optionalString_(settings.staffAdminPinHash), kitchenPinHash:optionalString_(settings.staffKitchenPinHash), runnerPinHash:optionalString_(settings.staffRunnerPinHash) };
+  const archivedOrders = rowsAsObjects_(ss, 'Archived Orders').filter(hasId_).map(function(x) { return { id:string_(x.id), eventId:string_(x.eventId), runnerId:optionalString_(x.runnerId), fulfillmentMethod:string_(x.fulfillmentMethod)||'delivery', items:parseJson_(x.itemsJson,[]), customer:{name:string_(x.customerName)}, location:{venueId:string_(x.venueId),zoneId:string_(x.zoneId),vertical:'middle',horizontal:'center'}, subtotal:number_(x.total),tax:0,deliveryFee:0,total:number_(x.total),paymentMethod:optionalString_(x.paymentMethod),status:string_(x.status),placedAt:string_(x.placedAt),deliveredAt:optionalString_(x.deliveredAt) }; });
+  const archivedFeedback = rowsAsObjects_(ss, 'Archived Feedback').filter(hasId_).map(function(x) { return { id:string_(x.id),orderId:string_(x.orderId),eventId:string_(x.eventId),rating:optionalNumber_(x.rating),comments:optionalString_(x.comments),submittedAt:string_(x.submittedAt) }; });
 
-  return { events:events, venues:venues, runners:runners, menuCategories:menuCategories, menuItems:menuItems, menus:menus, orders:orders, activity:activity, customerExperience:customerExperience, staffAccess:staffAccess, feedback:feedback };
+  return { archivedOrders:archivedOrders, archivedFeedback:archivedFeedback, events:events, venues:venues, runners:runners, menuCategories:menuCategories, menuItems:menuItems, menus:menus, orders:orders, activity:activity, customerExperience:customerExperience, staffAccess:staffAccess, feedback:feedback };
 }
 
 // When a user manually edits one of the structured tabs, mark the remote data as newer.
@@ -269,6 +281,35 @@ function onEdit(e) {
   } catch (error) {
     // Never block a spreadsheet edit because metadata bookkeeping failed.
   }
+}
+
+function sanitizeForSheets_(data) {
+  const clone = JSON.parse(JSON.stringify(data || {}));
+  (clone.orders || []).forEach(function(order) { if (order.customer) delete order.customer.mobile; });
+  (clone.archivedOrders || []).forEach(function(order) { if (order.customer) delete order.customer.mobile; });
+  return clone;
+}
+function contactKey_(orderId) { return 'SEATSERVE_ACTIVE_CONTACT_' + String(orderId || ''); }
+function storeActiveContacts_(orders) {
+  const props = PropertiesService.getScriptProperties();
+  const now = Date.now();
+  orders.forEach(function(order) {
+    if (!order || !order.id) return;
+    const active = order.status !== 'delivered' && order.status !== 'cancelled';
+    const mobile = order.customer && order.customer.mobile ? String(order.customer.mobile).trim() : '';
+    if (active && mobile) props.setProperty(contactKey_(order.id), JSON.stringify({ mobile: mobile, expiresAt: now + 24 * 60 * 60 * 1000 }));
+    if (!active) props.deleteProperty(contactKey_(order.id));
+  });
+}
+function restoreActiveContacts_(data) {
+  const props = PropertiesService.getScriptProperties();
+  const now = Date.now();
+  (data.orders || []).forEach(function(order) {
+    if (!order || !order.id || order.status === 'delivered' || order.status === 'cancelled') return;
+    const raw = props.getProperty(contactKey_(order.id)); if (!raw) return;
+    try { const item = JSON.parse(raw); if (item.expiresAt && item.expiresAt < now) { props.deleteProperty(contactKey_(order.id)); return; } order.customer = order.customer || {}; order.customer.mobile = item.mobile; } catch (e) { props.deleteProperty(contactKey_(order.id)); }
+  });
+  return data;
 }
 
 function getSpreadsheet_() {

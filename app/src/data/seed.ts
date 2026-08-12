@@ -8,6 +8,8 @@ const at = (hour: number, minute = 0) => {
 };
 
 export const seedData: SeatServeData = {
+  archivedOrders: [],
+  archivedFeedback: [],
   events: [
     {
       id: "event-home-opener",
@@ -191,6 +193,9 @@ export const seedData: SeatServeData = {
     estimatedCardFeeFixed: 0.3,
     cashPaymentsEnabled: true,
     cardPaymentsEnabled: true,
+    pickupEnabled: true,
+    pickupLocationName: "Home Concession Stand",
+    pickupInstructions: "Pick up at the concession window. Show your order number to the volunteer.",
     supportLinks: [
       { id: "support-donate", label: "Donate", url: "https://mvjagsboosterclub.boosterhub.com/home/11008", icon: "💚", enabled: true },
       { id: "support-volunteer", label: "Volunteer", url: "https://mvjagsboosterclub.boosterhub.com/home/11008", icon: "🙋", enabled: true },

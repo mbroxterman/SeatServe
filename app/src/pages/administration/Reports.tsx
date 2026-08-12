@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Banknote, Clock3, CreditCard, Download, MessageSquareText, PackageCheck, Star, TrendingUp, UsersRound } from "lucide-react";
+import { Archive, Banknote, Clock3, CreditCard, Download, MessageSquareText, PackageCheck, Star, Trash2, TrendingUp, UsersRound } from "lucide-react";
 import { useSeatServe } from "../../state/SeatServeContext";
 import type { Order } from "../../types/domain";
 import "./Reports.css";
@@ -17,9 +17,16 @@ const average = (values: Array<number | undefined>) => {
 const orderAmount = (order: Order) => order.paymentMethod === "card" ? (order.cardTotal ?? order.total) : (order.cashTotal ?? order.total);
 
 export default function Reports() {
-  const { data, activeEvent } = useSeatServe();
+  const { data, activeEvent, updateReportingData } = useSeatServe();
   const defaultEventId = activeEvent?.id ?? "all";
   const [eventId, setEventId] = useState(defaultEventId);
+  const [cleanupStatus, setCleanupStatus] = useState("all");
+  const [cleanupPayment, setCleanupPayment] = useState("all");
+  const [cleanupRunner, setCleanupRunner] = useState("all");
+  const [cleanupVenue, setCleanupVenue] = useState("all");
+  const [cleanupZone, setCleanupZone] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const events = useMemo(() => [...data.events].sort((a, b) => new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime()), [data.events]);
   const selectedOrders = useMemo(() => data.orders.filter((order) => eventId === "all" || order.eventId === eventId), [data.orders, eventId]);
@@ -75,6 +82,26 @@ export default function Reports() {
     };
   })).filter((row) => row.delivered > 0).sort((a, b) => b.delivered - a.delivered);
 
+  const cleanupOrders = selectedOrders.filter((order) => {
+    const placed = new Date(order.placedAt).getTime();
+    const fromOk = !dateFrom || placed >= new Date(`${dateFrom}T00:00:00`).getTime();
+    const toOk = !dateTo || placed <= new Date(`${dateTo}T23:59:59`).getTime();
+    return fromOk && toOk && (cleanupStatus === "all" || order.status === cleanupStatus) && (cleanupPayment === "all" || order.paymentMethod === cleanupPayment) && (cleanupRunner === "all" || order.runnerId === cleanupRunner) && (cleanupVenue === "all" || order.location.venueId === cleanupVenue) && (cleanupZone === "all" || order.location.zoneId === cleanupZone);
+  });
+  const cleanupIds = new Set(cleanupOrders.map((order) => order.id));
+  const cleanupFeedback = data.feedback.filter((item) => cleanupIds.has(item.orderId));
+  const cleanupTotal = cleanupOrders.reduce((sum, order) => sum + orderAmount(order), 0);
+  const archiveFiltered = () => {
+    if (!cleanupOrders.length || !window.confirm(`Archive ${cleanupOrders.length} filtered orders? They will leave current reports but remain in the workspace archive.`)) return;
+    updateReportingData({ ...data, orders: data.orders.filter((order) => !cleanupIds.has(order.id)), feedback: data.feedback.filter((item) => !cleanupIds.has(item.orderId)), archivedOrders: [...(data.archivedOrders ?? []), ...cleanupOrders.map((order) => ({ ...order, customer: { ...order.customer, mobile: undefined } }))], archivedFeedback: [...(data.archivedFeedback ?? []), ...cleanupFeedback] }, "Archived filtered reporting data");
+  };
+  const deleteFiltered = () => {
+    if (!cleanupOrders.length) return;
+    const confirmation = window.prompt(`Permanently delete ${cleanupOrders.length} filtered orders and ${cleanupFeedback.length} feedback responses? Type DELETE TEST DATA to continue.`);
+    if (confirmation !== "DELETE TEST DATA") return;
+    updateReportingData({ ...data, orders: data.orders.filter((order) => !cleanupIds.has(order.id)), feedback: data.feedback.filter((item) => !cleanupIds.has(item.orderId)) }, "Deleted filtered test reporting data");
+  };
+
   const exportCsv = () => {
     const rows = [
       ["Order", "Event", "Customer", "Status", "Payment", "Amount", "Delivery Fee", "Runner", "Zone", "Placed", "Delivered"],
@@ -125,6 +152,19 @@ export default function Reports() {
     <section className="report-card report-table-card">
       <div className="report-card__heading"><div><h2>Runner performance</h2><p>Delivered orders for the selected event scope.</p></div><UsersRound size={20}/></div>
       <div className="report-table"><div className="report-table__header"><span>Runner</span><span>Delivered</span><span>Avg delivery</span><span>Avg fulfillment</span><span>Collected</span></div>{runnerRows.map((row) => <div className="report-table__row" key={row.id}><strong>{row.name}</strong><span>{row.delivered}</span><span>{row.avgDelivery === undefined ? "—" : `${row.avgDelivery.toFixed(1)} min`}</span><span>{row.avgFulfillment === undefined ? "—" : `${row.avgFulfillment.toFixed(1)} min`}</span><span>{money(row.collected)}</span></div>)}{runnerRows.length === 0 && <p className="report-empty">No delivered runner orders in this selection yet.</p>}</div>
+    </section>
+
+    <section className="report-card report-cleanup-card">
+      <div className="report-card__heading"><div><h2>Archive &amp; delete reporting data</h2><p>Filter test data before archiving or permanently deleting it. Venue, menu, runner, event, and workspace configuration are never removed.</p></div></div>
+      <div className="reports-actions" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
+        <label>Status<select value={cleanupStatus} onChange={(e)=>setCleanupStatus(e.target.value)}><option value="all">All statuses</option>{["new","preparing","ready","assigned","delivering","delivered","cancelled"].map(v=><option key={v}>{v}</option>)}</select></label>
+        <label>Payment<select value={cleanupPayment} onChange={(e)=>setCleanupPayment(e.target.value)}><option value="all">All payments</option><option value="cash">Cash</option><option value="card">Card</option></select></label>
+        <label>Runner<select value={cleanupRunner} onChange={(e)=>setCleanupRunner(e.target.value)}><option value="all">All runners</option>{data.runners.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
+        <label>Venue<select value={cleanupVenue} onChange={(e)=>{setCleanupVenue(e.target.value);setCleanupZone("all")}}><option value="all">All venues</option>{data.venues.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
+        <label>Zone<select value={cleanupZone} onChange={(e)=>setCleanupZone(e.target.value)}><option value="all">All zones</option>{data.venues.filter(v=>cleanupVenue==="all"||v.id===cleanupVenue).flatMap(v=>v.zones.map(z=><option key={`${v.id}-${z.id}`} value={z.id}>{v.name} · {z.name}</option>))}</select></label>
+        <label>From<input type="date" value={dateFrom} onChange={(e)=>setDateFrom(e.target.value)}/></label><label>To<input type="date" value={dateTo} onChange={(e)=>setDateTo(e.target.value)}/></label>
+      </div>
+      <div style={{marginTop:16,padding:14,border:"1px solid #dce3ef",borderRadius:12,display:"flex",justifyContent:"space-between",gap:16,flexWrap:"wrap",alignItems:"center"}}><div><strong>{cleanupOrders.length} orders · {cleanupFeedback.length} feedback responses</strong><div style={{color:"#64748b",marginTop:4}}>Filtered order value: {money(cleanupTotal)} · Archived orders already stored: {(data.archivedOrders ?? []).length}</div></div><div style={{display:"flex",gap:10,flexWrap:"wrap"}}><button onClick={archiveFiltered} disabled={!cleanupOrders.length}><Archive size={17}/> Archive filtered</button><button onClick={deleteFiltered} disabled={!cleanupOrders.length} style={{background:"#b42318",color:"white"}}><Trash2 size={17}/> Permanently delete filtered</button></div></div>
     </section>
 
     <section className="reports-grid reports-grid--bottom">

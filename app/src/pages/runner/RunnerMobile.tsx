@@ -5,6 +5,8 @@ import {
   ChevronRight,
   Clock3,
   CreditCard,
+  Copy,
+  MessageCircle,
   MapPin,
   Navigation,
   PackageCheck,
@@ -153,6 +155,7 @@ function ActiveAssignment({ order, runner, zoneName, venueName, onPickup, onDeli
         <div><Navigation size={18} /><span>Facing the field</span><strong>{capitalize(order.location.horizontal)}</strong></div>
       </div>
 
+      {order.customer.mobile && <div className="runner-customer-note"><strong>Customer contact</strong><p>{order.customer.mobile}</p><div style={{display:"flex",gap:8,flexWrap:"wrap"}}><button type="button" onClick={() => navigator.clipboard.writeText(order.customer.mobile || "")}><Copy size={15}/> Copy number</button><a href={`sms:${order.customer.mobile}`} style={{display:"inline-flex",alignItems:"center",gap:6}}><MessageCircle size={15}/> Text customer</a></div></div>}
       {order.location.notes && <div className="runner-customer-note"><strong>Customer note</strong><p>{order.location.notes}</p></div>}
 
       {order.status === "delivering" && <section className="runner-seatbeacon"><div><Radio size={24}/><span><small>SeatBeacon</small><strong>{order.seatBeaconOpenedAt ? "Customer beacon active" : order.seatBeaconRequestedAt ? "Beacon requested" : "Help locate customer"}</strong></span></div><div className="runner-seatbeacon__actions"><button type="button" onClick={onRequestBeacon}><Radio size={17}/> {order.seatBeaconRequestedAt ? "Request again" : "Request SeatBeacon"}</button><button type="button" className={order.customerLocatedAt ? "is-complete" : ""} onClick={onCustomerLocated}><LocateFixed size={17}/> {order.customerLocatedAt ? "Customer located" : "Customer Located"}</button></div></section>}

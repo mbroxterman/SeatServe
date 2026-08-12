@@ -99,7 +99,7 @@ export default function KitchenOperations() {
 
   const autoAssignReadyOrders = () => {
     columns[2].orders
-      .filter((order) => !order.runnerId)
+      .filter((order) => order.fulfillmentMethod !== "pickup" && !order.runnerId)
       .sort((a, b) => new Date(a.readyAt ?? a.placedAt).getTime() - new Date(b.readyAt ?? b.placedAt).getTime())
       .forEach((order) => autoAssignRunner(order.id));
   };
@@ -195,7 +195,7 @@ function OrderCard({ order, zone, runner, selected, onSelect, onAccept, onAssign
       <div className="ko-card__action">
         {order.status === "new" && <button type="button" className="blue" onClick={(event) => { event.stopPropagation(); onAccept(); }}>Accept Order</button>}
         {order.status === "preparing" && <button type="button" className="outline" onClick={(event) => { event.stopPropagation(); onSelect(); }}>View Order</button>}
-        {order.status === "ready" && <button type="button" className="green" onClick={(event) => { event.stopPropagation(); onAssign(); }}>Assign Runner</button>}
+        {order.status === "ready" && (order.fulfillmentMethod === "pickup" ? <button type="button" className="green" onClick={(event) => { event.stopPropagation(); onSelect(); }}>Ready for Pickup</button> : <button type="button" className="green" onClick={(event) => { event.stopPropagation(); onAssign(); }}>Assign Runner</button>)}
       </div>
     </article>
   );
@@ -207,13 +207,14 @@ function OrderDetail({ order, zone, runner, runners, onClose, onStatus, onAssign
   const currentStep = statusStep(order.status);
   const availableRunners = runners.filter((item) => item.active && (item.status === "available" || item.id === order.runnerId));
   const next = order.status === "new" ? { label: "Accept Order", status: "preparing" as OrderStatus }
-    : order.status === "preparing" ? { label: "Mark Ready", status: "ready" as OrderStatus }
+    : order.status === "preparing" ? { label: order.fulfillmentMethod === "pickup" ? "Ready for Pickup" : "Mark Ready", status: "ready" as OrderStatus }
+      : order.status === "ready" && order.fulfillmentMethod === "pickup" ? { label: "Mark Picked Up", status: "delivered" as OrderStatus }
       : undefined;
 
   return <div className="ko-detail__content">
     <header className="ko-detail__header"><div><div className="ko-detail__heading"><h2>Order {order.id.startsWith("#") ? order.id : `#${order.id.replace(/^SS-/, "")}`}</h2><span className={`ko-badge ko-badge--${order.status}`}>{order.status === "assigned" ? "Runner Assigned" : titleCase(order.status)}</span></div><p>Placed: {formatTime(order.placedAt)} · {Math.max(0, Math.floor(elapsedSeconds(order.placedAt) / 60))} minutes ago</p></div><div className="ko-detail__header-actions"><button type="button" aria-label="Open order in new window"><ExternalLink size={18}/></button><button type="button" onClick={onClose} aria-label="Close order"><X size={20}/></button></div></header>
 
-    <section className="ko-location"><div><span><MapPin size={15}/>Location</span><h3>{zone}</h3><p>{titleCase(location.vertical)} · {titleCase(location.horizontal)}</p></div><div className="ko-location__map"><MapPin size={30}/></div></section>
+    <section className="ko-location"><div><span><MapPin size={15}/>{order.fulfillmentMethod === "pickup" ? "Fulfillment" : "Location"}</span><h3>{order.fulfillmentMethod === "pickup" ? "Window Pickup" : zone}</h3><p>{order.fulfillmentMethod === "pickup" ? "Customer will pick up at the concession window" : `${titleCase(location.vertical)} · ${titleCase(location.horizontal)}`}</p></div><div className="ko-location__map"><MapPin size={30}/></div></section>
 
     <section className="ko-status"><div className="ko-section-title"><h3>Order Status</h3><span>{elapsedLabel(order.placedAt)} elapsed</span></div><div className="ko-timeline">{FLOW.map((step, index) => <div key={step.status} className={`ko-timeline__step ${index < currentStep ? "is-complete" : ""} ${index === currentStep ? "is-current" : ""}`}><span>{index < currentStep ? <Check size={15}/> : ""}</span><strong>{step.label}</strong><small>{index === currentStep ? "Current" : index === 0 ? formatTime(order.placedAt) : ""}</small></div>)}</div></section>
 
@@ -221,7 +222,7 @@ function OrderDetail({ order, zone, runner, runners, onClose, onStatus, onAssign
 
     <section className="ko-notes"><h3>Customer Notes</h3><p>{location.notes || "No special instructions."}</p></section>
 
-    <section className="ko-runner"><h3>Runner</h3><div className="ko-runner__row"><span className="ko-avatar">{runner?.name?.slice(0, 1) ?? "?"}</span><div><strong>{runner?.name ?? "Unassigned"}</strong><small>{runner?.status ? titleCase(runner.status) : "No runner assigned"}</small></div>{order.status === "ready" ? <button type="button" onClick={onAutoAssign}>Auto Assign</button> : order.status === "assigned" ? <select value={order.runnerId ?? ""} onChange={(event) => onAssign(event.target.value || undefined)}><option value="">Unassigned</option>{availableRunners.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select> : null}</div>{(order.status === "assigned" || order.status === "delivering") && <p className="ko-runner__handoff">{order.status === "assigned" ? "Waiting for the runner to confirm pickup in Runner Mobile." : "Runner is out for delivery. Delivery and payment completion are controlled from Runner Mobile."}</p>}</section>
+    {order.fulfillmentMethod !== "pickup" && <section className="ko-runner"><h3>Runner</h3><div className="ko-runner__row"><span className="ko-avatar">{runner?.name?.slice(0, 1) ?? "?"}</span><div><strong>{runner?.name ?? "Unassigned"}</strong><small>{runner?.status ? titleCase(runner.status) : "No runner assigned"}</small></div>{order.status === "ready" ? <button type="button" onClick={onAutoAssign}>Auto Assign</button> : order.status === "assigned" ? <select value={order.runnerId ?? ""} onChange={(event) => onAssign(event.target.value || undefined)}><option value="">Unassigned</option>{availableRunners.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select> : null}</div>{(order.status === "assigned" || order.status === "delivering") && <p className="ko-runner__handoff">{order.status === "assigned" ? "Waiting for the runner to confirm pickup in Runner Mobile." : "Runner is out for delivery. Delivery and payment completion are controlled from Runner Mobile."}</p>}</section>}
 
     {order.paymentMethod && <section className={`ko-payment ko-payment--${order.paymentMethod}`}>{order.paymentMethod === "card" ? <CreditCard size={20}/> : <Banknote size={20}/>}<div><small>Payment at delivery</small><strong>{order.paymentMethod === "card" ? "Credit card" : "Exact cash"}</strong><span>{order.paymentCollectedAt ? "Payment collected" : "Runner will collect at delivery"}</span></div><b>${Number(order.paymentMethod === "card" ? (order.cardTotal ?? order.total) : (order.cashTotal ?? order.total)).toFixed(2)}</b></section>}
 

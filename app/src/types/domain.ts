@@ -50,7 +50,8 @@ export interface OrderLineItem { menuItemId:string; name:string; unitPrice:numbe
 export interface OrderLocation { venueId:string; zoneId:string; vertical:VerticalLocation; horizontal:HorizontalLocation; notes?:string; }
 export interface OrderCustomer { name:string; mobile?:string; }
 export type PaymentMethod = "cash" | "card";
-export interface Order { id:string; eventId:string; runnerId?:string; items:OrderLineItem[]; customer:OrderCustomer; location:OrderLocation; subtotal:number; tax:number; total:number; deliveryFee:number; paymentMethod?:PaymentMethod; cashTotal?:number; estimatedCardFee?:number; cardTotal?:number; paymentCollectedAt?:string; seatBeaconRequestedAt?:string; seatBeaconOpenedAt?:string; customerLocatedAt?:string; status:OrderStatus; placedAt:string; acceptedAt?:string; preparingAt?:string; readyAt?:string; assignedAt?:string; deliveringAt?:string; deliveredAt?:string; assignmentQueuedAt?:string; }
+export type FulfillmentMethod = "delivery" | "pickup";
+export interface Order { id:string; eventId:string; runnerId?:string; fulfillmentMethod?:FulfillmentMethod; items:OrderLineItem[]; customer:OrderCustomer; location:OrderLocation; subtotal:number; tax:number; total:number; deliveryFee:number; paymentMethod?:PaymentMethod; cashTotal?:number; estimatedCardFee?:number; cardTotal?:number; paymentCollectedAt?:string; seatBeaconRequestedAt?:string; seatBeaconOpenedAt?:string; customerLocatedAt?:string; status:OrderStatus; placedAt:string; acceptedAt?:string; preparingAt?:string; readyAt?:string; assignedAt?:string; deliveringAt?:string; deliveredAt?:string; assignmentQueuedAt?:string; }
 export interface ActivityItem { id:string; message:string; occurredAt:string; tone:"info"|"success"|"warning"; }
 
 export interface CommunitySupportLink {
@@ -81,6 +82,9 @@ export interface CustomerExperienceSettings {
   estimatedCardFeeFixed: number;
   cashPaymentsEnabled: boolean;
   cardPaymentsEnabled: boolean;
+  pickupEnabled: boolean;
+  pickupLocationName: string;
+  pickupInstructions: string;
 }
 
 export interface StaffAccessSettings {
@@ -98,4 +102,4 @@ export interface CustomerFeedback {
   submittedAt: string;
 }
 
-export interface SeatServeData { events:SeatServeEvent[]; venues:Venue[]; runners:Runner[]; menuCategories:MenuCategory[]; menuItems:MenuItem[]; menus:MenuDefinition[]; orders:Order[]; activity:ActivityItem[]; customerExperience:CustomerExperienceSettings; staffAccess:StaffAccessSettings; feedback:CustomerFeedback[]; }
+export interface SeatServeData { archivedOrders:Order[]; archivedFeedback:CustomerFeedback[]; events:SeatServeEvent[]; venues:Venue[]; runners:Runner[]; menuCategories:MenuCategory[]; menuItems:MenuItem[]; menus:MenuDefinition[]; orders:Order[]; activity:ActivityItem[]; customerExperience:CustomerExperienceSettings; staffAccess:StaffAccessSettings; feedback:CustomerFeedback[]; }
