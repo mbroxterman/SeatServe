@@ -83,6 +83,15 @@ export default function MenuManager() {
     setCondimentText((item.condiments ?? []).join(", "));
     setItemOpen(true);
   };
+  const duplicateAndEdit = (item: MenuItem) => {
+    const newId = duplicateMenuItem(item.id);
+    if (!newId) return;
+    const copy: MenuItem = { ...item, id: newId, name: `${item.name} Copy`, condiments: [...(item.condiments ?? [])] };
+    setEditing(copy);
+    setDraft({ ...copy, description: copy.description ?? "", condiments: [...(copy.condiments ?? [])], emoji: copy.emoji ?? "🍽️", imageUrl: copy.imageUrl ?? "", imageAlt: copy.imageAlt ?? copy.name, displayStyle: copy.displayStyle ?? "image-with-emoji-fallback" });
+    setCondimentText((copy.condiments ?? []).join(", "));
+    setItemOpen(true);
+  };
   const beginAddCategory = () => { setEditingCategory(null); setCategoryDraft({ ...emptyCategory, sortOrder: categories.length + 1 }); setCategoryOpen(true); };
   const beginEditCategory = (category: MenuCategory) => { setEditingCategory(category); setCategoryDraft({ name: category.name, emoji: category.emoji, imageUrl: category.imageUrl ?? "", visible: category.visible, sortOrder: category.sortOrder }); setCategoryOpen(true); };
 
@@ -93,6 +102,7 @@ export default function MenuManager() {
     const clean: MenuDraft = { ...draft, name: draft.name.trim(), category: category?.name ?? draft.category.trim(), categoryId: category?.id ?? draft.categoryId, description: draft.description?.trim(), price: Number(draft.price), condiments, emoji: draft.emoji?.trim() || category?.emoji || "🍽️", imageAlt: draft.imageAlt?.trim() || draft.name.trim() };
     if (!clean.name || !clean.category || clean.price < 0) return;
     if (editing) updateMenuItem(editing.id, clean); else addMenuItem(clean);
+    setEditing(null);
     setItemOpen(false);
   };
   const submitCategory = (event: FormEvent) => {
@@ -161,7 +171,7 @@ export default function MenuManager() {
 
     <div className="menu-toolbar"><label className="menu-search"><Search size={17}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search menu items"/></label><select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="All">All categories</option>{categories.map((value) => <option key={value.id} value={value.id}>{value.name}</option>)}</select></div>
 
-    <div className="menu-groups">{groupedItems.map(([group, items]) => <section className="menu-group" key={group.id}><header><div><span className="menu-group__emoji">{group.emoji}</span><span>{group.name}</span><small>{items.length} items · drag to reorder</small></div><strong>{items.filter((item) => item.available).length} available</strong></header><div className="menu-group__rows">{items.map((item) => <article className={`menu-row ${draggedItem?.id === item.id ? "is-dragging" : ""}`} draggable onDragStart={() => setDraggedItem({ id: item.id, categoryId: group.id })} onDragOver={(event) => event.preventDefault()} onDrop={() => dropItem(item.id, group.id)} key={item.id}><span className="drag-handle" title="Drag to reorder"><GripVertical size={18}/></span><div className="menu-item-visual">{item.imageUrl && item.displayStyle !== "emoji" ? <img src={item.imageUrl} alt={item.imageAlt || item.name}/> : <span>{item.emoji || group.emoji}</span>}</div><div className="menu-row__main"><div><strong>{item.name}</strong><span className={item.available ? "menu-status is-active" : "menu-status"}>{item.available ? "Available" : "Sold out"}</span></div><p>{item.description || "No description"}</p><small>{item.kind === "quick-add" ? "Inline quantity" : "Customizable item"}{item.condiments?.length ? ` · ${item.condiments.length} condiments` : ""}</small></div><div className="menu-row__meta"><strong>${item.price.toFixed(2)}</strong><span>{item.available ? "Available" : "Sold out"}</span></div><div className="menu-row__actions"><button title="Edit" onClick={() => beginEdit(item)}><Pencil size={17}/></button><button title="Duplicate item" onClick={() => duplicateMenuItem(item.id)}><Copy size={17}/></button><button className="is-danger" title="Delete" onClick={() => window.confirm(`Delete ${item.name}?`) && deleteMenuItem(item.id)}><Trash2 size={17}/></button></div></article>)}</div></section>)}{groupedItems.length === 0 && <div className="menu-empty"><UtensilsCrossed size={40}/><h2>No menu items found</h2><p>Add an item or change the current filters.</p></div>}</div>
+    <div className="menu-groups">{groupedItems.map(([group, items]) => <section className="menu-group" key={group.id}><header><div><span className="menu-group__emoji">{group.emoji}</span><span>{group.name}</span><small>{items.length} items · drag to reorder</small></div><strong>{items.filter((item) => item.available).length} available</strong></header><div className="menu-group__rows">{items.map((item) => <article className={`menu-row ${draggedItem?.id === item.id ? "is-dragging" : ""}`} draggable onDragStart={() => setDraggedItem({ id: item.id, categoryId: group.id })} onDragOver={(event) => event.preventDefault()} onDrop={() => dropItem(item.id, group.id)} key={item.id}><span className="drag-handle" title="Drag to reorder"><GripVertical size={18}/></span><div className="menu-item-visual">{item.imageUrl && item.displayStyle !== "emoji" ? <img src={item.imageUrl} alt={item.imageAlt || item.name}/> : <span>{item.emoji || group.emoji}</span>}</div><div className="menu-row__main"><div><strong>{item.name}</strong><span className={item.available ? "menu-status is-active" : "menu-status"}>{item.available ? "Available" : "Sold out"}</span></div><p>{item.description || "No description"}</p><small>{item.kind === "quick-add" ? "Inline quantity" : "Customizable item"}{item.condiments?.length ? ` · ${item.condiments.length} condiments` : ""}</small></div><div className="menu-row__meta"><strong>${item.price.toFixed(2)}</strong><span>{item.available ? "Available" : "Sold out"}</span></div><div className="menu-row__actions"><button title="Edit" onClick={() => beginEdit(item)}><Pencil size={17}/></button><button title="Duplicate item" onClick={() => duplicateAndEdit(item)}><Copy size={17}/></button><button className="is-danger" title="Delete" onClick={() => window.confirm(`Delete ${item.name}?`) && deleteMenuItem(item.id)}><Trash2 size={17}/></button></div></article>)}</div></section>)}{groupedItems.length === 0 && <div className="menu-empty"><UtensilsCrossed size={40}/><h2>No menu items found</h2><p>Add an item or change the current filters.</p></div>}</div>
 
     </>}
 

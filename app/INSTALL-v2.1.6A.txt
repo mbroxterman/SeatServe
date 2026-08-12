@@ -1,0 +1,17 @@
+SeatServe v2.1.6A Emergency Pilot Fix
+
+Fixes:
+- Sync Now sends the current in-memory workspace snapshot.
+- Sync success verifies the Google Apps Script structured write and menu-item count.
+- Duplicate Menu Item opens the new copy for editing with a new stable ID.
+- Saving a duplicated item cannot overwrite the original item ID and closes cleanly.
+
+IMPORTANT GOOGLE APPS SCRIPT STEP:
+1. Replace the deployed Apps Script Code.gs with google-apps-script/Code.gs from this patch.
+2. Deploy > Manage deployments > Edit > New version > Deploy.
+3. Keep the same /exec URL.
+4. In SeatServe click Sync now. The success message should include the number of menu items saved.
+
+Install app patch:
+Extract this ZIP directly into the active app folder containing package.json, replacing matching files.
+Run npm run build, then npm run dev.

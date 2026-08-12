@@ -32,6 +32,7 @@ type EventDraft = Omit<SeatServeEvent, "id">;
 
 interface SeatServeContextValue {
   data: SeatServeData;
+  getCurrentDataSnapshot: () => SeatServeData;
   activeEvent?: SeatServeEvent;
   addEvent: (draft: EventDraft) => string;
   updateEvent: (eventId: string, draft: EventDraft) => void;
@@ -677,31 +678,50 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
 
   const addMenuItem = (draft: MenuItemDraft) => {
     const id = crypto.randomUUID();
-    setData((current) => ({ ...current, menuItems: [...current.menuItems, { ...draft, id }], activity: pushActivity(current, `${draft.name} added to menu`, "success") }));
+    setData((current) => {
+      const next = { ...current, menuItems: [...current.menuItems, { ...draft, id }], activity: pushActivity(current, `${draft.name} added to menu`, "success") };
+      currentDataRef.current = next;
+      return next;
+    });
     return id;
   };
-  const updateMenuItem = (itemId: string, draft: MenuItemDraft) => setData((current) => ({ ...current, menuItems: current.menuItems.map((item) => item.id === itemId ? { ...item, ...draft } : item), activity: pushActivity(current, `${draft.name} updated`, "info") }));
+  const updateMenuItem = (itemId: string, draft: MenuItemDraft) => setData((current) => {
+    const safeDraft = { ...draft } as MenuItemDraft & { id?: string };
+    delete safeDraft.id;
+    const next = {
+      ...current,
+      menuItems: current.menuItems.map((item) => item.id === itemId ? { ...item, ...safeDraft, id: itemId } : item),
+      activity: pushActivity(current, `${safeDraft.name} updated`, "info"),
+    };
+    currentDataRef.current = next;
+    return next;
+  });
   const duplicateMenuItem = (itemId: string) => {
     const id = crypto.randomUUID();
-    let created = false;
     setData((current) => {
       const source = current.menuItems.find((item) => item.id === itemId);
       if (!source) return current;
-      created = true;
-      const copy: MenuItem = { ...source, id, name: `${source.name} Copy` };
+      const copy: MenuItem = {
+        ...source,
+        id,
+        name: `${source.name} Copy`,
+        condiments: [...(source.condiments ?? [])],
+      };
       const menus = current.menus.map((menu) => {
         if (!menu.itemIds.includes(itemId)) return menu;
         const sourceOverride = menu.priceOverrides?.[itemId];
         return {
           ...menu,
-          itemIds: [...menu.itemIds, id],
-          priceOverrides: sourceOverride === undefined ? menu.priceOverrides : { ...(menu.priceOverrides ?? {}), [id]: sourceOverride },
-          hiddenItemIds: menu.hiddenItemIds?.includes(itemId) ? [...(menu.hiddenItemIds ?? []), id] : menu.hiddenItemIds,
+          itemIds: Array.from(new Set([...menu.itemIds, id])),
+          priceOverrides: sourceOverride === undefined ? { ...(menu.priceOverrides ?? {}) } : { ...(menu.priceOverrides ?? {}), [id]: sourceOverride },
+          hiddenItemIds: menu.hiddenItemIds?.includes(itemId) ? Array.from(new Set([...(menu.hiddenItemIds ?? []), id])) : [...(menu.hiddenItemIds ?? [])],
         };
       });
-      return { ...current, menuItems: [...current.menuItems, copy], menus, activity: pushActivity(current, `${source.name} duplicated`, "info") };
+      const next = { ...current, menuItems: [...current.menuItems, copy], menus, activity: pushActivity(current, `${source.name} duplicated`, "info") };
+      currentDataRef.current = next;
+      return next;
     });
-    return created ? id : undefined;
+    return id;
   };
   const deleteMenuItem = (itemId: string) => setData((current) => ({ ...current, menuItems: current.menuItems.filter((item) => item.id !== itemId), activity: pushActivity(current, "Menu item deleted", "warning") }));
 
@@ -872,7 +892,9 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  return <SeatServeContext.Provider value={{ data, activeEvent, addEvent, updateEvent, duplicateEvent, deleteEvent, startEvent, completeEvent, setOrderingEnabled, placeOrder, updateOrderStatus, markOrderPaymentCollected, requestSeatBeacon, markSeatBeaconOpened, markCustomerLocated, assignRunnerToOrder, autoAssignRunner, markRunnerAvailable, cancelOrder, addRunner, updateRunner, duplicateRunner, deleteRunner, setRunnerStatus, addMenuItem, updateMenuItem, duplicateMenuItem, deleteMenuItem, addMenuCategory, updateMenuCategory, reorderMenuCategories, reorderMenuItems, deleteMenuCategory, addMenu, updateMenu, deleteMenu, assignMenuToEvent, addVenue, updateVenue, duplicateVenue, deleteVenue, addZone, updateZone, duplicateZone, deleteZone, addSection, updateSection, deleteSection, updateCustomerExperience, updateStaffAccess, submitCustomerFeedback, replaceData, updateReportingData, resetDemoData, repairWorkspaceData }}>{children}</SeatServeContext.Provider>;
+  const getCurrentDataSnapshot = () => currentDataRef.current;
+
+  return <SeatServeContext.Provider value={{ data, getCurrentDataSnapshot, activeEvent, addEvent, updateEvent, duplicateEvent, deleteEvent, startEvent, completeEvent, setOrderingEnabled, placeOrder, updateOrderStatus, markOrderPaymentCollected, requestSeatBeacon, markSeatBeaconOpened, markCustomerLocated, assignRunnerToOrder, autoAssignRunner, markRunnerAvailable, cancelOrder, addRunner, updateRunner, duplicateRunner, deleteRunner, setRunnerStatus, addMenuItem, updateMenuItem, duplicateMenuItem, deleteMenuItem, addMenuCategory, updateMenuCategory, reorderMenuCategories, reorderMenuItems, deleteMenuCategory, addMenu, updateMenu, deleteMenu, assignMenuToEvent, addVenue, updateVenue, duplicateVenue, deleteVenue, addZone, updateZone, duplicateZone, deleteZone, addSection, updateSection, deleteSection, updateCustomerExperience, updateStaffAccess, submitCustomerFeedback, replaceData, updateReportingData, resetDemoData, repairWorkspaceData }}>{children}</SeatServeContext.Provider>;
 }
 
 export function useSeatServe() {

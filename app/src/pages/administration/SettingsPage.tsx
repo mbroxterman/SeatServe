@@ -15,7 +15,7 @@ import { grantStaffSession, hashPin, revokeStaffSession, type StaffRole } from "
 import "./SettingsPage.css";
 
 export default function SettingsPage() {
-  const { data, replaceData, updateCustomerExperience, updateStaffAccess, repairWorkspaceData } = useSeatServe();
+  const { data, getCurrentDataSnapshot, replaceData, updateCustomerExperience, updateStaffAccess, repairWorkspaceData } = useSeatServe();
   const [experience, setExperience] = useState(() => data.customerExperience);
   const [workspaces, setWorkspaces] = useState<WorkspaceProfile[]>(() => listWorkspaces());
   const [active, setActive] = useState<WorkspaceProfile>(() => getActiveWorkspace());
@@ -102,7 +102,17 @@ export default function SettingsPage() {
   };
 
   const savePreferences = () => { saveSyncConfig({ ...config, workspaceName: active.name }); setMessage("Workspace synchronization preferences saved."); };
-  const runPush = async (force = false) => { setBusy(true); setMessage(""); try { const result = await pushToGoogleSheets(data, force); setMessage(result.conflict ? "Google Sheets contains newer data. Load it first or use Force upload." : "SeatServe data saved to Google Sheets."); } catch (error) { setMessage(error instanceof Error ? error.message : "Sync failed."); } finally { setBusy(false); } };
+  const runPush = async (force = false) => {
+    setBusy(true); setMessage("");
+    try {
+      const snapshot = getCurrentDataSnapshot();
+      const result = await pushToGoogleSheets(snapshot, force);
+      setMessage(result.conflict
+        ? "Google Sheets contains newer data. Load it first or use Force upload."
+        : `SeatServe data saved to Google Sheets (${snapshot.menuItems.length} menu items).`);
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Sync failed."); }
+    finally { setBusy(false); }
+  };
   const runPull = async () => { if (meta.pendingChanges && !window.confirm("You have unsynced local changes. A backup will be created before loading Google Sheets. Continue?")) return; setBusy(true); setMessage(""); try { const result = await pullFromGoogleSheets(data); if (result.data) replaceData(result.data, "Loaded configuration from Google Sheets"); setMessage("Google Sheets data loaded. A local safety backup was created first."); } catch (error) { setMessage(error instanceof Error ? error.message : "Load failed."); } finally { setBusy(false); } };
   const importBackup = async (file?: File) => { if (!file) return; try { createLocalBackup(data, "before-json-import"); replaceData(await readJsonBackup(file), "Restored configuration from JSON backup"); setMessage("JSON backup restored."); } catch (error) { setMessage(error instanceof Error ? error.message : "Backup restore failed."); } finally { if (inputRef.current) inputRef.current.value = ""; } };
   const disconnect = () => { if (deploymentManaged) { setMessage("Production Google Sheets is managed by Netlify for this deployment."); return; } if (!window.confirm("Disconnect Google Sheets for this workspace? Local data will remain available.")) return; try { disconnectSync(); refreshWorkspaceState(); setShowConnectionForm(true); setMessage("Google Sheets disconnected from this workspace."); } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to disconnect."); } };

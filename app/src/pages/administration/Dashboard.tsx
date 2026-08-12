@@ -99,7 +99,7 @@ export default function Dashboard() {
           </div>
         </aside>
       </section>
-      <footer className="dashboard-footer"><span>SeatServe Administration</span><span>v2.1.6</span></footer>
+      <footer className="dashboard-footer"><span>SeatServe Administration</span><span>v2.1.6A</span></footer>
     </section>
   );
 }
