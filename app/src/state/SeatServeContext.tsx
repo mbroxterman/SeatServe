@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { seedData } from "../data/seed";
-import { createLocalBackup, getActiveDataStorageKey, getActiveWorkspaceId, getSyncConfig, isDeploymentManagedSync, markLocalChange, pollGoogleSheets, pushToGoogleSheets } from "../services/persistence";
+import { createLocalBackup, getActiveDataStorageKey, getActiveWorkspaceId, getSyncConfig, markLocalChange, pollGoogleSheets, pushToGoogleSheets } from "../services/persistence";
 import type {
   ActivityItem,
   DeliveryZone,
@@ -57,7 +57,6 @@ interface SeatServeContextValue {
   setRunnerStatus: (runnerId: string, status: RunnerStatus) => void;
   addMenuItem: (draft: MenuItemDraft) => string;
   updateMenuItem: (itemId: string, draft: MenuItemDraft) => void;
-  duplicateMenuItem: (itemId: string) => string | undefined;
   deleteMenuItem: (itemId: string) => void;
   addMenuCategory: (draft: MenuCategoryDraft) => string;
   updateMenuCategory: (categoryId: string, draft: MenuCategoryDraft) => void;
@@ -74,7 +73,6 @@ interface SeatServeContextValue {
   deleteVenue: (venueId: string) => boolean;
   addZone: (venueId: string, draft: ZoneDraft) => string;
   updateZone: (venueId: string, zoneId: string, draft: ZoneDraft) => void;
-  duplicateZone: (venueId: string, zoneId: string) => string | undefined;
   deleteZone: (venueId: string, zoneId: string) => void;
   addSection: (venueId: string, zoneId: string, draft: SectionDraft) => string;
   updateSection: (venueId: string, zoneId: string, sectionId: string, draft: SectionDraft) => void;
@@ -184,7 +182,6 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
   const instanceIdRef = useRef(crypto.randomUUID());
   const serializedDataRef = useRef("");
   const currentDataRef = useRef(data);
-  const [cloudBootstrapReady, setCloudBootstrapReady] = useState(() => !isDeploymentManagedSync());
 
   useEffect(() => {
     const applyExternalData = (candidate: SeatServeData) => {
@@ -250,12 +247,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     const config = getSyncConfig();
-    const deploymentManaged = isDeploymentManagedSync();
-    if (deploymentManaged) setCloudBootstrapReady(false);
-    if (!config.connected || !config.endpointUrl.trim() || !navigator.onLine) {
-      setCloudBootstrapReady(true);
-      return () => { cancelled = true; };
-    }
+    if (!config.connected || !config.endpointUrl.trim() || !navigator.onLine) return () => { cancelled = true; };
 
     const poll = async () => {
       try {
@@ -271,8 +263,6 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
         }
       } catch {
         // Local and cross-tab updates continue even when the remote endpoint is unavailable.
-      } finally {
-        if (!cancelled) setCloudBootstrapReady(true);
       }
     };
 
@@ -673,28 +663,6 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
     return id;
   };
   const updateMenuItem = (itemId: string, draft: MenuItemDraft) => setData((current) => ({ ...current, menuItems: current.menuItems.map((item) => item.id === itemId ? { ...item, ...draft } : item), activity: pushActivity(current, `${draft.name} updated`, "info") }));
-  const duplicateMenuItem = (itemId: string) => {
-    const id = crypto.randomUUID();
-    let created = false;
-    setData((current) => {
-      const source = current.menuItems.find((item) => item.id === itemId);
-      if (!source) return current;
-      created = true;
-      const copy: MenuItem = { ...source, id, name: `${source.name} Copy` };
-      const menus = current.menus.map((menu) => {
-        if (!menu.itemIds.includes(itemId)) return menu;
-        const sourceOverride = menu.priceOverrides?.[itemId];
-        return {
-          ...menu,
-          itemIds: [...menu.itemIds, id],
-          priceOverrides: sourceOverride === undefined ? menu.priceOverrides : { ...(menu.priceOverrides ?? {}), [id]: sourceOverride },
-          hiddenItemIds: menu.hiddenItemIds?.includes(itemId) ? [...(menu.hiddenItemIds ?? []), id] : menu.hiddenItemIds,
-        };
-      });
-      return { ...current, menuItems: [...current.menuItems, copy], menus, activity: pushActivity(current, `${source.name} duplicated`, "info") };
-    });
-    return created ? id : undefined;
-  };
   const deleteMenuItem = (itemId: string) => setData((current) => ({ ...current, menuItems: current.menuItems.filter((item) => item.id !== itemId), activity: pushActivity(current, "Menu item deleted", "warning") }));
 
   const addMenuCategory = (draft: MenuCategoryDraft) => {
@@ -765,28 +733,6 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
     return id;
   };
   const updateZone = (venueId: string, zoneId: string, draft: ZoneDraft) => setData((current) => ({ ...current, venues: current.venues.map((venue) => venue.id === venueId ? { ...venue, zones: venue.zones.map((zone) => zone.id === zoneId ? { ...zone, ...draft } : zone) } : venue), activity: pushActivity(current, `${draft.name} delivery zone updated`, "info") }));
-  const duplicateZone = (venueId: string, zoneId: string) => {
-    const id = crypto.randomUUID();
-    let created = false;
-    setData((current) => {
-      const venue = current.venues.find((entry) => entry.id === venueId);
-      const source = venue?.zones.find((zone) => zone.id === zoneId);
-      if (!venue || !source) return current;
-      created = true;
-      const copy: DeliveryZone = {
-        ...source,
-        id,
-        name: `${source.name} Copy`,
-        sections: source.sections.map((section) => ({ ...section, id: crypto.randomUUID() })),
-      };
-      return {
-        ...current,
-        venues: current.venues.map((entry) => entry.id === venueId ? { ...entry, zones: [...entry.zones, copy] } : entry),
-        activity: pushActivity(current, `${source.name} duplicated`, "info"),
-      };
-    });
-    return created ? id : undefined;
-  };
   const deleteZone = (venueId: string, zoneId: string) => setData((current) => ({ ...current, venues: current.venues.map((venue) => venue.id === venueId ? { ...venue, zones: venue.zones.filter((zone) => zone.id !== zoneId) } : venue), activity: pushActivity(current, "Delivery zone deleted", "warning") }));
   const addSection = (venueId: string, zoneId: string, draft: SectionDraft) => {
     const id = crypto.randomUUID();
@@ -849,19 +795,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  if (!cloudBootstrapReady) {
-    return (
-      <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#f4f7fb", padding: 24, fontFamily: "Inter, system-ui, sans-serif" }}>
-        <section style={{ textAlign: "center", color: "#101d45" }}>
-          <img src="/seatserve-web-logo.png" alt="SeatServe" style={{ width: "min(360px, 80vw)", height: 96, objectFit: "contain" }} />
-          <h1 style={{ margin: "18px 0 8px" }}>Loading SeatServe</h1>
-          <p style={{ margin: 0, color: "#66738f" }}>Connecting to the live workspace…</p>
-        </section>
-      </main>
-    );
-  }
-
-  return <SeatServeContext.Provider value={{ data, activeEvent, addEvent, updateEvent, duplicateEvent, deleteEvent, startEvent, completeEvent, setOrderingEnabled, placeOrder, updateOrderStatus, markOrderPaymentCollected, requestSeatBeacon, markSeatBeaconOpened, markCustomerLocated, assignRunnerToOrder, autoAssignRunner, markRunnerAvailable, cancelOrder, addRunner, updateRunner, duplicateRunner, deleteRunner, setRunnerStatus, addMenuItem, updateMenuItem, duplicateMenuItem, deleteMenuItem, addMenuCategory, updateMenuCategory, reorderMenuCategories, reorderMenuItems, deleteMenuCategory, addMenu, updateMenu, deleteMenu, assignMenuToEvent, addVenue, updateVenue, duplicateVenue, deleteVenue, addZone, updateZone, duplicateZone, deleteZone, addSection, updateSection, deleteSection, updateCustomerExperience, updateStaffAccess, submitCustomerFeedback, replaceData, resetDemoData, repairWorkspaceData }}>{children}</SeatServeContext.Provider>;
+  return <SeatServeContext.Provider value={{ data, activeEvent, addEvent, updateEvent, duplicateEvent, deleteEvent, startEvent, completeEvent, setOrderingEnabled, placeOrder, updateOrderStatus, markOrderPaymentCollected, requestSeatBeacon, markSeatBeaconOpened, markCustomerLocated, assignRunnerToOrder, autoAssignRunner, markRunnerAvailable, cancelOrder, addRunner, updateRunner, duplicateRunner, deleteRunner, setRunnerStatus, addMenuItem, updateMenuItem, deleteMenuItem, addMenuCategory, updateMenuCategory, reorderMenuCategories, reorderMenuItems, deleteMenuCategory, addMenu, updateMenu, deleteMenu, assignMenuToEvent, addVenue, updateVenue, duplicateVenue, deleteVenue, addZone, updateZone, deleteZone, addSection, updateSection, deleteSection, updateCustomerExperience, updateStaffAccess, submitCustomerFeedback, replaceData, resetDemoData, repairWorkspaceData }}>{children}</SeatServeContext.Provider>;
 }
 
 export function useSeatServe() {

@@ -60,18 +60,6 @@ export const defaultSyncConfig: SyncConfig = {
 };
 export const defaultSyncMeta: SyncMeta = { state: "idle", pendingChanges: false };
 
-const DEPLOYMENT_API_URL = String(import.meta.env.VITE_SEATSERVE_API_URL ?? "").trim();
-const DEPLOYMENT_WORKSPACE_NAME = String(import.meta.env.VITE_SEATSERVE_WORKSPACE_NAME ?? "").trim();
-
-export function isDeploymentManagedSync(): boolean {
-  const workspace = getActiveWorkspace();
-  return Boolean(DEPLOYMENT_API_URL && workspace.environment === "production");
-}
-
-export function getDeploymentApiUrl(): string {
-  return isDeploymentManagedSync() ? DEPLOYMENT_API_URL : "";
-}
-
 function readJson<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
@@ -198,15 +186,6 @@ export function deleteWorkspace(id: string): void {
 
 export function getSyncConfig(): SyncConfig {
   const workspace = getActiveWorkspace();
-  if (DEPLOYMENT_API_URL && workspace.environment === "production") {
-    return {
-      endpointUrl: DEPLOYMENT_API_URL,
-      autoSync: true,
-      autoSyncIntervalSeconds: 0,
-      workspaceName: DEPLOYMENT_WORKSPACE_NAME || workspace.name,
-      connected: true,
-    };
-  }
   return {
     endpointUrl: workspace.endpointUrl,
     autoSync: workspace.autoSync,
@@ -218,23 +197,12 @@ export function getSyncConfig(): SyncConfig {
 
 export function saveSyncConfig(config: SyncConfig): void {
   const active = getActiveWorkspace();
-  const deploymentManaged = DEPLOYMENT_API_URL && active.environment === "production";
-  saveWorkspace({
-    ...active,
-    name: deploymentManaged ? active.name : config.workspaceName,
-    endpointUrl: deploymentManaged ? active.endpointUrl : config.endpointUrl,
-    autoSync: deploymentManaged ? true : config.autoSync,
-    autoSyncIntervalSeconds: deploymentManaged ? 0 : config.autoSyncIntervalSeconds,
-    connected: deploymentManaged ? active.connected : config.connected,
-  });
-  window.dispatchEvent(new CustomEvent("seatserve:sync-config", { detail: getSyncConfig() }));
+  saveWorkspace({ ...active, name: config.workspaceName, endpointUrl: config.endpointUrl, autoSync: config.autoSync, autoSyncIntervalSeconds: config.autoSyncIntervalSeconds, connected: config.connected });
+  window.dispatchEvent(new CustomEvent("seatserve:sync-config", { detail: config }));
 }
 
 export function disconnectSync(): void {
   const active = getActiveWorkspace();
-  if (DEPLOYMENT_API_URL && active.environment === "production") {
-    throw new Error("This production connection is managed by the Netlify deployment. Remove or change VITE_SEATSERVE_API_URL in Netlify to disconnect it.");
-  }
   saveWorkspace({ ...active, endpointUrl: "", connected: false, autoSync: false });
   saveSyncMeta({ ...getSyncMeta(), state: "idle", lastError: undefined, remoteWorkspaceName: undefined });
 }
