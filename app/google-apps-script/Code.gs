@@ -52,7 +52,7 @@ function status_(requestedWorkspaceName) {
     updatedAt: getMeta_(metaSheet, 'updatedAt') || '',
     spreadsheetName: ss.getName(),
     structuredSync: true,
-    schemaVersion: 6
+    schemaVersion: 7
   });
 }
 
@@ -72,8 +72,15 @@ function save_(request) {
   const updatedAt = new Date().toISOString();
   const workspaceName = request.workspaceName || getMeta_(metaSheet, 'workspaceName') || ss.getName();
 
-  // Keep one lossless JSON snapshot for backup/backward compatibility.
-  replaceRows_(dataSheet, [['seatserve', JSON.stringify(data)]]);
+  // Keep one lossless JSON snapshot for backup/backward compatibility, plus a readable sync heartbeat.
+  replaceRows_(dataSheet, [
+    ['seatserve', JSON.stringify(data)],
+    ['lastSyncAt', updatedAt],
+    ['lastSyncStatus', 'success'],
+    ['lastSyncSource', 'SeatServe Netlify / app'],
+    ['appVersion', 'v2.1.6B'],
+    ['workspaceName', workspaceName]
+  ]);
 
   // Also write human-readable normalized tabs that may be edited directly.
   writeStructuredData_(ss, data);
@@ -81,11 +88,11 @@ function save_(request) {
   setMeta_(metaSheet, 'workspaceName', workspaceName);
   setMeta_(metaSheet, 'updatedAt', updatedAt);
   setMeta_(metaSheet, 'clientUpdatedAt', request.clientUpdatedAt || updatedAt);
-  setMeta_(metaSheet, 'schemaVersion', '6');
+  setMeta_(metaSheet, 'schemaVersion', '7');
   setMeta_(metaSheet, 'lastWriteSource', 'SeatServe app');
   SpreadsheetApp.flush();
 
-  return json_({ ok: true, updatedAt: updatedAt, workspaceName: workspaceName, structuredSync: true, schemaVersion: 6, menuItemCount: (data.menuItems || []).length });
+  return json_({ ok: true, updatedAt: updatedAt, workspaceName: workspaceName, structuredSync: true, schemaVersion: 7, menuItemCount: (data.menuItems || []).length });
 }
 
 function load_() {
@@ -112,7 +119,7 @@ function load_() {
     workspaceName: getMeta_(metaSheet, 'workspaceName') || ss.getName(),
     source: source,
     structuredSync: true,
-    schemaVersion: 6
+    schemaVersion: 7
   });
 }
 

@@ -1,0 +1,26 @@
+SeatServe v2.1.6B - Pilot Reliability Patch
+
+Install
+1. Stop Vite.
+2. Extract this ZIP directly into the active SeatServe app folder that contains package.json.
+3. Replace matching files.
+4. Run: npm install
+5. Run: npm run build
+6. Run: npm run dev
+
+Google Apps Script
+1. Open google-apps-script/Code.gs from this package.
+2. Replace the deployed Apps Script Code.gs.
+3. Deploy > Manage deployments > Edit > New version > Deploy.
+4. Keep the same /exec URL.
+5. Click Sync now once in SeatServe.
+
+Changes
+- Re-enforces the 1.5 MB custom menu image upload limit before any image is read.
+- Accepted images are resized/compressed before being stored to reduce browser storage failures.
+- Storage quota failures are caught so the app does not fall to a blank page.
+- Menu editor remains available when an image/storage save fails.
+- QR/PDF SeatServe logo preserves its natural aspect ratio.
+- SeatServe Data now includes readable lastSyncAt, lastSyncStatus, lastSyncSource, appVersion, and workspaceName rows after each successful Sync now.
+- Apps Script structured schema version increased to 7 so outdated deployments are detected.
+- Administration version updated to v2.1.6B.

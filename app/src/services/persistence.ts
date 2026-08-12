@@ -302,7 +302,7 @@ export async function pushToGoogleSheets(data: SeatServeData, force = false): Pr
     const result = await parseResponse(response);
     if (result.conflict) { saveSyncMeta({ ...getSyncMeta(), state: "conflict", pendingChanges: true, lastError: result.message ?? "Remote data is newer." }); return result; }
     if (!result.ok) throw new Error(result.message ?? "Google Sheets sync failed.");
-    if (result.schemaVersion !== undefined && result.schemaVersion < 6) throw new Error("Google Apps Script is out of date. Replace Code.gs with the v2.1.6A version and redeploy a new web-app version.");
+    if (result.schemaVersion !== undefined && result.schemaVersion < 7) throw new Error("Google Apps Script is out of date. Replace Code.gs with the v2.1.6B version and redeploy a new web-app version.");
     if (result.menuItemCount !== undefined && result.menuItemCount !== data.menuItems.length) throw new Error(`Google Sheets saved ${result.menuItemCount} menu items, but SeatServe sent ${data.menuItems.length}. Please redeploy Code.gs and try Sync now again.`);
     const now = new Date().toISOString(); saveSyncMeta({ ...getSyncMeta(), state: "saved", pendingChanges: false, lastSuccessfulSyncAt: now, lastRemoteUpdatedAt: result.updatedAt ?? now, remoteWorkspaceName: result.workspaceName ?? config.workspaceName, lastError: undefined }); return result;
   } catch (error) { const message = error instanceof Error ? error.message : "Google Sheets sync failed."; saveSyncMeta({ ...getSyncMeta(), state: "error", pendingChanges: true, lastError: message }); throw error; }

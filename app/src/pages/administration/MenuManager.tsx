@@ -1,4 +1,4 @@
-import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { CirclePlus, Copy, Eye, EyeOff, GripVertical, ImagePlus, Pencil, Search, Trash2, UtensilsCrossed, X } from "lucide-react";
 import { useSeatServe } from "../../state/SeatServeContext";
 import type { MenuCategory, MenuDefinition, MenuItem } from "../../types/domain";
@@ -24,12 +24,42 @@ const emptyDraft: MenuDraft = {
   displayStyle: "image-with-emoji-fallback",
 };
 
-function readImage(file: File, onLoad: (value: string) => void) {
-  if (!file.type.startsWith("image/")) return;
-  if (file.size > 1_500_000) { window.alert("Please choose an image smaller than 1.5 MB."); return; }
-  const reader = new FileReader();
-  reader.onload = () => onLoad(String(reader.result ?? ""));
-  reader.readAsDataURL(file);
+const MAX_UPLOAD_BYTES = 1_500_000;
+const MAX_STORED_IMAGE_EDGE = 900;
+const STORED_IMAGE_QUALITY = 0.82;
+
+async function readImage(file: File, onLoad: (value: string) => void) {
+  if (!file.type.startsWith("image/")) {
+    window.alert("Please choose an image file.");
+    return;
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    window.alert("Please choose an image smaller than 1.5 MB.");
+    return;
+  }
+
+  try {
+    const source = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      image.onload = () => { URL.revokeObjectURL(objectUrl); resolve(image); };
+      image.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error("Unable to read the selected image.")); };
+      image.src = objectUrl;
+    });
+
+    const scale = Math.min(1, MAX_STORED_IMAGE_EDGE / Math.max(source.naturalWidth, source.naturalHeight));
+    const width = Math.max(1, Math.round(source.naturalWidth * scale));
+    const height = Math.max(1, Math.round(source.naturalHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Image processing is not available in this browser.");
+    context.drawImage(source, 0, 0, width, height);
+    onLoad(canvas.toDataURL("image/jpeg", STORED_IMAGE_QUALITY));
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : "Unable to process the selected image.");
+  }
 }
 
 export default function MenuManager() {
@@ -49,6 +79,16 @@ export default function MenuManager() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [editingMenu, setEditingMenu] = useState<MenuDefinition | null>(null);
   const [menuDraft, setMenuDraft] = useState<MenuDefinitionDraft>({ name: "", description: "", active: true, itemIds: [], priceOverrides: {}, hiddenItemIds: [] });
+
+  useEffect(() => {
+    const onStorageError = (event: Event) => {
+      const detail = (event as CustomEvent<{ message?: string }>).detail;
+      window.alert(detail?.message ?? "SeatServe could not save this change locally.");
+      setItemOpen(true);
+    };
+    window.addEventListener("seatserve:storage-error", onStorageError);
+    return () => window.removeEventListener("seatserve:storage-error", onStorageError);
+  }, []);
 
   const categories = useMemo(() => [...data.menuCategories].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)), [data.menuCategories]);
   const assignableEvents = useMemo(() => [...data.events]
@@ -101,9 +141,13 @@ export default function MenuManager() {
     const condiments = condimentText.split(",").map((value) => value.trim()).filter(Boolean);
     const clean: MenuDraft = { ...draft, name: draft.name.trim(), category: category?.name ?? draft.category.trim(), categoryId: category?.id ?? draft.categoryId, description: draft.description?.trim(), price: Number(draft.price), condiments, emoji: draft.emoji?.trim() || category?.emoji || "🍽️", imageAlt: draft.imageAlt?.trim() || draft.name.trim() };
     if (!clean.name || !clean.category || clean.price < 0) return;
-    if (editing) updateMenuItem(editing.id, clean); else addMenuItem(clean);
-    setEditing(null);
-    setItemOpen(false);
+    try {
+      if (editing) updateMenuItem(editing.id, clean); else addMenuItem(clean);
+      setEditing(null);
+      setItemOpen(false);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Unable to save this menu item. Try a smaller image or remove the image and save again.");
+    }
   };
   const submitCategory = (event: FormEvent) => {
     event.preventDefault();
@@ -186,7 +230,7 @@ export default function MenuManager() {
       <label>Description<textarea value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })}/></label>
       <div className="menu-form-grid menu-form-grid--single"><label>Price<input required type="number" min="0" step="0.01" value={draft.price} onChange={(event) => setDraft({ ...draft, price: Number(event.target.value) })}/></label></div>
       <div className="menu-form-grid"><label>Customer interaction<select value={draft.kind ?? "standard"} onChange={(event) => setDraft({ ...draft, kind: event.target.value as MenuItem["kind"] })}><option value="standard">Open customization sheet</option><option value="quick-add">Inline quantity controls</option></select></label><label>Display style<select value={draft.displayStyle ?? "image-with-emoji-fallback"} onChange={(event) => setDraft({ ...draft, displayStyle: event.target.value as MenuItem["displayStyle"] })}><option value="emoji">Emoji only</option><option value="image">Image only</option><option value="image-with-emoji-fallback">Image with emoji fallback</option></select></label></div>
-      <section className="appearance-editor"><div className="appearance-preview">{draft.imageUrl && draft.displayStyle !== "emoji" ? <img src={draft.imageUrl} alt="Preview"/> : <span>{draft.emoji || "🍽️"}</span>}</div><div><label>Emoji icon<input value={draft.emoji ?? ""} onChange={(event) => setDraft({ ...draft, emoji: event.target.value })} placeholder="🍔"/></label><label className="image-upload"><ImagePlus size={17}/> Upload custom image<input type="file" accept="image/*" onChange={(event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (file) readImage(file, (imageUrl) => setDraft((current) => ({ ...current, imageUrl }))); }}/></label>{draft.imageUrl && <button type="button" className="text-button" onClick={() => setDraft({ ...draft, imageUrl: "" })}>Remove image</button>}</div></section>
+      <section className="appearance-editor"><div className="appearance-preview">{draft.imageUrl && draft.displayStyle !== "emoji" ? <img src={draft.imageUrl} alt="Preview"/> : <span>{draft.emoji || "🍽️"}</span>}</div><div><label>Emoji icon<input value={draft.emoji ?? ""} onChange={(event) => setDraft({ ...draft, emoji: event.target.value })} placeholder="🍔"/></label><label className="image-upload"><ImagePlus size={17}/> Upload custom image<input type="file" accept="image/*" onChange={(event: ChangeEvent<HTMLInputElement>) => { const input = event.currentTarget; const file = input.files?.[0]; if (file) void readImage(file, (imageUrl) => setDraft((current) => ({ ...current, imageUrl }))); input.value = ""; }}/></label>{draft.imageUrl && <button type="button" className="text-button" onClick={() => setDraft({ ...draft, imageUrl: "" })}>Remove image</button>}</div></section>
       <label>Condiments <small>Editable for this item; separate choices with commas. Leave blank when none apply.</small><input value={condimentText} onChange={(event) => setCondimentText(event.target.value)} placeholder="Ketchup, Mustard, Pickles, Onions"/></label>
       <label className="menu-check"><input type="checkbox" checked={draft.available} onChange={(event) => setDraft({ ...draft, available: event.target.checked })}/> Available to customers</label><div className="menu-modal__actions"><button type="button" className="menu-button" onClick={() => setItemOpen(false)}>Cancel</button><button className="menu-button menu-button--primary" type="submit">Save item</button></div>
     </form></div></div>}

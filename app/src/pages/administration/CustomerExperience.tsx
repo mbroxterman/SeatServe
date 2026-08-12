@@ -38,7 +38,14 @@ async function renderLetterPage(entry:QrEntry, qrImage:string, origin:string) {
   const canvas=document.createElement("canvas"); canvas.width=1275; canvas.height=1650; const ctx=canvas.getContext("2d")!;
   ctx.fillStyle="#fff"; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.fillStyle="#071a3d"; ctx.fillRect(0,0,canvas.width,165);
   const logo=new Image(); logo.crossOrigin="anonymous"; logo.src=`${origin}/seatserve-web-logo.png`; await new Promise<void>((resolve)=>{logo.onload=()=>resolve();logo.onerror=()=>resolve();});
-  if(logo.complete&&logo.naturalWidth) ctx.drawImage(logo,205,18,865,125);
+  if (logo.complete && logo.naturalWidth) {
+    const maxLogoWidth = 865;
+    const maxLogoHeight = 125;
+    const scale = Math.min(maxLogoWidth / logo.naturalWidth, maxLogoHeight / logo.naturalHeight);
+    const logoWidth = logo.naturalWidth * scale;
+    const logoHeight = logo.naturalHeight * scale;
+    ctx.drawImage(logo, (1275 - logoWidth) / 2, 18 + (maxLogoHeight - logoHeight) / 2, logoWidth, logoHeight);
+  }
   ctx.textAlign="center"; ctx.fillStyle="#071a3d"; ctx.font="bold 74px Arial"; ctx.fillText(entry.title,637,285);
   ctx.font="bold 30px Arial"; ctx.fillStyle=entry.kind==="staff"?"#b91c1c":"#334155"; ctx.fillText(entry.kind==="staff"?"STAFF ONLY":"SCAN TO ORDER CONCESSIONS",637,350);
   ctx.font="28px Arial"; ctx.fillStyle="#475569"; ctx.fillText(entry.subtitle,637,405);

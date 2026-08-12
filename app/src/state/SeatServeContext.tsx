@@ -306,7 +306,13 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
     currentDataRef.current = data;
     const serialized = JSON.stringify(data);
     serializedDataRef.current = serialized;
-    localStorage.setItem(getActiveDataStorageKey(), serialized);
+    try {
+      localStorage.setItem(getActiveDataStorageKey(), serialized);
+    } catch (error) {
+      console.error("SeatServe local storage save failed", error);
+      window.dispatchEvent(new CustomEvent("seatserve:storage-error", { detail: { message: "SeatServe could not save this change locally. Remove or replace large menu images and try again." } }));
+      return;
+    }
     channelRef.current?.postMessage({ sourceId: instanceIdRef.current, workspaceId: getActiveWorkspaceId(), data });
 
     if (!didMountRef.current) {
