@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { seedData } from "../data/seed";
-import { createLocalBackup, getActiveDataStorageKey, getActiveWorkspaceId, getSyncConfig, markLocalChange, pollGoogleSheets, pushToGoogleSheets } from "../services/persistence";
+import { createLocalBackup, getActiveDataStorageKey, getActiveWorkspaceId, getSyncConfig, isDeploymentManagedSync, markLocalChange, pollGoogleSheets, pushToGoogleSheets } from "../services/persistence";
 import type {
   ActivityItem,
   DeliveryZone,
@@ -184,6 +184,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
   const instanceIdRef = useRef(crypto.randomUUID());
   const serializedDataRef = useRef("");
   const currentDataRef = useRef(data);
+  const [cloudBootstrapReady, setCloudBootstrapReady] = useState(() => !isDeploymentManagedSync());
 
   useEffect(() => {
     const applyExternalData = (candidate: SeatServeData) => {
@@ -249,7 +250,12 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     const config = getSyncConfig();
-    if (!config.connected || !config.endpointUrl.trim() || !navigator.onLine) return () => { cancelled = true; };
+    const deploymentManaged = isDeploymentManagedSync();
+    if (deploymentManaged) setCloudBootstrapReady(false);
+    if (!config.connected || !config.endpointUrl.trim() || !navigator.onLine) {
+      setCloudBootstrapReady(true);
+      return () => { cancelled = true; };
+    }
 
     const poll = async () => {
       try {
@@ -265,6 +271,8 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
         }
       } catch {
         // Local and cross-tab updates continue even when the remote endpoint is unavailable.
+      } finally {
+        if (!cancelled) setCloudBootstrapReady(true);
       }
     };
 
@@ -840,6 +848,18 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
       return { ...current, events: repairedEvents, menus: repairedMenus, runners: repairedRunners, activity: pushActivity(current, "Workspace links repaired and stale references removed", "success") };
     });
   };
+
+  if (!cloudBootstrapReady) {
+    return (
+      <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#f4f7fb", padding: 24, fontFamily: "Inter, system-ui, sans-serif" }}>
+        <section style={{ textAlign: "center", color: "#101d45" }}>
+          <img src="/seatserve-web-logo.png" alt="SeatServe" style={{ width: "min(360px, 80vw)", height: 96, objectFit: "contain" }} />
+          <h1 style={{ margin: "18px 0 8px" }}>Loading SeatServe</h1>
+          <p style={{ margin: 0, color: "#66738f" }}>Connecting to the live workspace…</p>
+        </section>
+      </main>
+    );
+  }
 
   return <SeatServeContext.Provider value={{ data, activeEvent, addEvent, updateEvent, duplicateEvent, deleteEvent, startEvent, completeEvent, setOrderingEnabled, placeOrder, updateOrderStatus, markOrderPaymentCollected, requestSeatBeacon, markSeatBeaconOpened, markCustomerLocated, assignRunnerToOrder, autoAssignRunner, markRunnerAvailable, cancelOrder, addRunner, updateRunner, duplicateRunner, deleteRunner, setRunnerStatus, addMenuItem, updateMenuItem, duplicateMenuItem, deleteMenuItem, addMenuCategory, updateMenuCategory, reorderMenuCategories, reorderMenuItems, deleteMenuCategory, addMenu, updateMenu, deleteMenu, assignMenuToEvent, addVenue, updateVenue, duplicateVenue, deleteVenue, addZone, updateZone, duplicateZone, deleteZone, addSection, updateSection, deleteSection, updateCustomerExperience, updateStaffAccess, submitCustomerFeedback, replaceData, resetDemoData, repairWorkspaceData }}>{children}</SeatServeContext.Provider>;
 }

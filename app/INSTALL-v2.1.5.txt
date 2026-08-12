@@ -1,0 +1,41 @@
+SeatServe v2.1.5 - Netlify Cloud Bootstrap
+
+PURPOSE
+This pilot-blocking patch makes the Netlify production site automatically use the Google Apps Script endpoint on every device. The Apps Script URL no longer has to be pasted into each phone/tablet/browser.
+
+INSTALL
+1. Extract this ZIP directly into the active SeatServe app folder (the folder containing package.json).
+2. Replace matching files.
+3. Test locally with: npm run dev
+4. Commit and push the changed files to GitHub. Netlify will redeploy automatically.
+
+NETLIFY ENVIRONMENT VARIABLES
+In Netlify -> Project configuration -> Environment variables, add:
+
+VITE_SEATSERVE_API_URL = your deployed Google Apps Script /exec URL
+
+Optional:
+VITE_SEATSERVE_WORKSPACE_NAME = Mill Valley High School
+
+Then trigger a new deployment (or push a commit).
+
+BEHAVIOR
+- The Netlify-managed endpoint is used automatically only for PRODUCTION workspaces.
+- Development and Demo workspaces can still use their own manually configured/local connection.
+- Production automatically loads Google Sheets before showing SeatServe on a fresh browser/device.
+- Production changes auto-sync immediately to Google Sheets.
+- Other devices poll the shared Sheet and receive current events, venues, zones, menus, orders, runners, and settings.
+- Settings shows that the production connection is managed by Netlify.
+- The endpoint URL does not have to be entered on every device.
+
+IMPORTANT
+VITE_ variables are embedded in the browser bundle. Treat the Apps Script /exec endpoint as a public application endpoint; do not put passwords, Google credentials, or private API secrets in VITE_ variables.
+
+PILOT TEST
+1. Add the Netlify environment variable and redeploy.
+2. Open the live SeatServe URL in a brand-new/private browser.
+3. Confirm Settings shows cloud connection automatically (no pasted URL).
+4. Rename a zone on the admin computer and Sync Now / wait for autosync.
+5. Scan that zone QR on a phone that has never opened SeatServe.
+6. Confirm the latest zone name, live event, and assigned menu appear.
+7. Place an order and confirm Kitchen/Runner devices receive it without entering the Apps Script URL.
