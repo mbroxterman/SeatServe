@@ -1,0 +1,37 @@
+SeatServe v2.1.6 - Pilot Operations Bundle
+
+INSTALL
+1. Stop npm run dev.
+2. Extract this ZIP directly into the active SeatServe app folder containing package.json.
+3. Replace matching files.
+4. Run: npm install
+5. Run: npm run build
+6. Run: npm run dev
+7. Commit/push to GitHub so Netlify redeploys.
+
+GOOGLE APPS SCRIPT UPDATE REQUIRED
+Replace the deployed Google Apps Script Code.gs with google-apps-script/Code.gs from this package, then:
+Deploy > Manage deployments > Edit > New version > Deploy.
+Keep the existing /exec URL.
+
+V2.1.6 PILOT CHANGES
+- SeatBeacon request auto-launches on an awake customer tracking page.
+- Pending SeatBeacon request launches when the customer returns/unlocks and the page resumes.
+- Runner sees Requested vs SeatBeacon Active and can copy/text the customer phone number.
+- Customer phone numbers are removed from Google Sheet tables and the JSON Sheet snapshot.
+- Active-order phone numbers are kept temporarily in Apps Script Properties for runner access and expire after 24 hours / delivery.
+- QR signs are one full 8.5x11 page each with SeatServe branding, current location name, and large QR.
+- Print one, print venue, print all, PDF one, PDF venue, PDF all.
+- QR URLs use readable current venue/zone slugs. Regenerate signs after renaming.
+- Reporting cleanup supports filtering by event plus date, status, payment, runner, venue, and zone.
+- Archive filtered data removes it from current reports but retains archived records.
+- Permanently Delete Filtered requires typing DELETE TEST DATA.
+- Development workspaces remain independently configurable with their own Apps Script / Google Sheet endpoint.
+- Window Pickup can be enabled and its pickup name/instructions edited in Settings > Checkout & Payments.
+- Pickup orders have no delivery fee, do not require a runner/SeatBeacon, and Kitchen can mark them Picked Up.
+- Duplicate Menu Item, Duplicate Venue, and Duplicate Zone remain included from v2.1.4.
+- Administration version updated to v2.1.6.
+
+NETLIFY
+Keep the existing repo-root netlify.toml and Netlify VITE_SEATSERVE_API_URL production environment variable.
+The app/public/_redirects file is also included in this package.
