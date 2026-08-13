@@ -1,0 +1,24 @@
+SeatServe v2.1.6D - Google Sheets Sync Size Fix
+
+This patch fixes Google Sheets' 50,000-character-per-cell limit.
+
+Changes:
+- Full SeatServe Data snapshot is split into 40,000-character chunks.
+- Load from Sheets can reassemble the chunked snapshot.
+- Legacy single-cell snapshots remain readable.
+- Oversized embedded menu/category images are stored in a new SeatServe Assets tab in safe chunks.
+- Structured Menu Items and Menu Categories tabs keep a small asset reference instead of an oversized base64 value.
+- Apps Script schema version is now 8.
+- Administration version displays v2.1.6D.
+
+INSTALL
+1. Stop the local dev server.
+2. Extract this ZIP directly into the active app folder containing package.json.
+3. Replace your Google Apps Script Code.gs with google-apps-script/Code.gs from this package.
+4. Apps Script: Deploy > Manage deployments > Edit > New version > Deploy. Keep the same /exec URL.
+5. Run npm run build, then npm run dev.
+6. Click Test connection, then Sync now.
+7. In Google Sheets, verify SeatServe Data contains seatserveChunkCount plus seatserve.0001, seatserve.0002, etc.
+8. Verify lastSyncAt changes to the current time and lastSyncStatus is success.
+
+No Netlify environment-variable changes are required.

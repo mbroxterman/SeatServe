@@ -346,7 +346,7 @@ export async function pushToGoogleSheets(data: SeatServeData, force = false): Pr
     const result = await parseResponse(response);
     if (result.conflict) { finishSyncAttempt(startedAt, response, result, { state: "conflict", pendingChanges: true, lastError: result.message ?? "Remote data is newer." }); return result; }
     if (!result.ok) throw new Error(result.message ?? "Google Sheets sync failed.");
-    if (result.schemaVersion !== undefined && result.schemaVersion < 7) throw new Error("Google Apps Script is out of date. Replace Code.gs with the v2.1.6C version and redeploy a new web-app version.");
+    if (result.schemaVersion !== undefined && result.schemaVersion < 8) throw new Error("Google Apps Script is out of date. Replace Code.gs with the v2.1.6D version and redeploy a new web-app version.");
     if (result.menuItemCount !== undefined && result.menuItemCount !== data.menuItems.length) throw new Error(`Google Sheets saved ${result.menuItemCount} menu items, but SeatServe sent ${data.menuItems.length}. Please redeploy Code.gs and try Sync now again.`);
     const now = new Date().toISOString();
     finishSyncAttempt(startedAt, response, result, { state: "saved", pendingChanges: false, lastSuccessfulSyncAt: now, lastRemoteUpdatedAt: result.updatedAt ?? now, remoteWorkspaceName: result.workspaceName ?? config.workspaceName, lastError: undefined });

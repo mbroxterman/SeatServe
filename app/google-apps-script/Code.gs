@@ -2,6 +2,9 @@ const SEATSERVE_SPREADSHEET_ID = '146i2shTLFn8PPAPbdZocCGYc4j-8tH_SY3T-T1AStJE';
 
 const DATA_SHEET = 'SeatServe Data';
 const META_SHEET = 'SeatServe Meta';
+const ASSET_SHEET = 'SeatServe Assets';
+const SNAPSHOT_CHUNK_SIZE = 40000;
+const CELL_CHUNK_SIZE = 40000;
 const STRUCTURED_SHEETS = [
   'Events',
   'Venues',
@@ -17,7 +20,8 @@ const STRUCTURED_SHEETS = [
   'Community Support',
   'Activity',
   'Archived Orders',
-  'Archived Feedback'
+  'Archived Feedback',
+  'SeatServe Assets'
 ];
 
 function doGet(e) {
@@ -52,7 +56,7 @@ function status_(requestedWorkspaceName) {
     updatedAt: getMeta_(metaSheet, 'updatedAt') || '',
     spreadsheetName: ss.getName(),
     structuredSync: true,
-    schemaVersion: 7
+    schemaVersion: 8
   });
 }
 
@@ -72,15 +76,9 @@ function save_(request) {
   const updatedAt = new Date().toISOString();
   const workspaceName = request.workspaceName || getMeta_(metaSheet, 'workspaceName') || ss.getName();
 
-  // Keep one lossless JSON snapshot for backup/backward compatibility, plus a readable sync heartbeat.
-  replaceRows_(dataSheet, [
-    ['seatserve', JSON.stringify(data)],
-    ['lastSyncAt', updatedAt],
-    ['lastSyncStatus', 'success'],
-    ['lastSyncSource', 'SeatServe Netlify / app'],
-    ['appVersion', 'v2.1.6C'],
-    ['workspaceName', workspaceName]
-  ]);
+  // Keep one lossless JSON snapshot for backup/backward compatibility. Google Sheets
+  // limits a single cell to 50,000 characters, so the snapshot is stored in safe chunks.
+  replaceRows_(dataSheet, buildSnapshotRows_(data, updatedAt, workspaceName));
 
   // Also write human-readable normalized tabs that may be edited directly.
   writeStructuredData_(ss, data);
@@ -88,11 +86,11 @@ function save_(request) {
   setMeta_(metaSheet, 'workspaceName', workspaceName);
   setMeta_(metaSheet, 'updatedAt', updatedAt);
   setMeta_(metaSheet, 'clientUpdatedAt', request.clientUpdatedAt || updatedAt);
-  setMeta_(metaSheet, 'schemaVersion', '7');
+  setMeta_(metaSheet, 'schemaVersion', '8');
   setMeta_(metaSheet, 'lastWriteSource', 'SeatServe app');
   SpreadsheetApp.flush();
 
-  return json_({ ok: true, updatedAt: updatedAt, workspaceName: workspaceName, structuredSync: true, schemaVersion: 7, menuItemCount: (data.menuItems || []).length });
+  return json_({ ok: true, updatedAt: updatedAt, workspaceName: workspaceName, structuredSync: true, schemaVersion: 8, menuItemCount: (data.menuItems || []).length });
 }
 
 function load_() {
@@ -106,10 +104,9 @@ function load_() {
   } catch (error) {
     source = 'json-backup';
     const dataSheet = getOrCreate_(ss, DATA_SHEET, ['key', 'json']);
-    const rows = dataSheet.getDataRange().getValues();
-    const row = rows.slice(1).find(function(item) { return item[0] === 'seatserve'; });
-    if (!row || !row[1]) throw error;
-    data = restoreActiveContacts_(JSON.parse(row[1]));
+    const payload = readSnapshotPayload_(dataSheet);
+    if (!payload) throw error;
+    data = restoreActiveContacts_(JSON.parse(payload));
   }
 
   return json_({
@@ -119,11 +116,12 @@ function load_() {
     workspaceName: getMeta_(metaSheet, 'workspaceName') || ss.getName(),
     source: source,
     structuredSync: true,
-    schemaVersion: 7
+    schemaVersion: 8
   });
 }
 
 function writeStructuredData_(ss, data) {
+  const assetRows = [];
   writeTable_(ss, 'Events', [
     'id','name','opponent','venueId','menuId','startsAt','orderingOpensAt','orderingClosesAt','status','orderingEnabled'
   ], (data.events || []).map(function(x) { return [x.id,x.name,x.opponent,x.venueId,x.menuId || '',x.startsAt,x.orderingOpensAt,x.orderingClosesAt,x.status,boolean_(x.orderingEnabled)]; }));
@@ -146,11 +144,11 @@ function writeStructuredData_(ss, data) {
   writeTable_(ss, 'Venue Sections', ['venueId','zoneId','id','name','seatRange','active'], sections);
 
   writeTable_(ss, 'Menu Categories', ['id','name','emoji','imageUrl','visible','sortOrder'], (data.menuCategories || []).map(function(x) {
-    return [x.id,x.name,x.emoji || '',x.imageUrl || '',boolean_(x.visible),number_(x.sortOrder)];
+    return [x.id,x.name,x.emoji || '',storeLargeCell_(assetRows, 'menu-category:' + x.id + ':imageUrl', x.imageUrl || ''),boolean_(x.visible),number_(x.sortOrder)];
   }));
 
   writeTable_(ss, 'Menu Items', ['id','name','category','categoryId','description','price','available','kind','condiments','emoji','imageUrl','imageAlt','displayStyle','displayOrder'], (data.menuItems || []).map(function(x, index) {
-    return [x.id,x.name,x.category || '',x.categoryId || '',x.description || '',number_(x.price),boolean_(x.available),x.kind || 'standard',(x.condiments || []).join(', '),x.emoji || '',x.imageUrl || '',x.imageAlt || '',x.displayStyle || 'emoji',index];
+    return [x.id,x.name,x.category || '',x.categoryId || '',x.description || '',number_(x.price),boolean_(x.available),x.kind || 'standard',(x.condiments || []).join(', '),x.emoji || '',storeLargeCell_(assetRows, 'menu-item:' + x.id + ':imageUrl', x.imageUrl || ''),x.imageAlt || '',x.displayStyle || 'emoji',index];
   }));
 
   writeTable_(ss, 'Menus', ['id','name','description','active','itemIds','priceOverridesJson','hiddenItemIds'], (data.menus || []).map(function(x) {
@@ -211,9 +209,14 @@ function writeStructuredData_(ss, data) {
   writeTable_(ss, 'Activity', ['id','message','occurredAt','tone'], (data.activity || []).map(function(x) {
     return [x.id,x.message,x.occurredAt,x.tone];
   }));
+
+  // Oversized values (primarily embedded menu images) are chunked here instead of
+  // exceeding Google Sheets' 50,000-character per-cell limit.
+  writeTable_(ss, ASSET_SHEET, ['key','chunkIndex','chunk'], assetRows);
 }
 
 function readStructuredData_(ss) {
+  const assetMap = readAssetMap_(ss);
   // The Events tab is the minimum marker that structured sync has been written.
   const eventSheet = ss.getSheetByName('Events');
   if (!eventSheet || eventSheet.getLastRow() < 1) throw new Error('Structured SeatServe tabs have not been synchronized yet.');
@@ -238,11 +241,11 @@ function readStructuredData_(ss) {
   });
 
   const menuCategories = rowsAsObjects_(ss, 'Menu Categories').filter(hasId_).map(function(x) { return {
-    id:string_(x.id), name:string_(x.name), emoji:string_(x.emoji), imageUrl:optionalString_(x.imageUrl), visible:bool_(x.visible), sortOrder:number_(x.sortOrder)
+    id:string_(x.id), name:string_(x.name), emoji:string_(x.emoji), imageUrl:optionalString_(restoreLargeCell_(assetMap, x.imageUrl)), visible:bool_(x.visible), sortOrder:number_(x.sortOrder)
   }; }).sort(function(a,b) { return a.sortOrder - b.sortOrder; });
 
   const menuItems = rowsAsObjects_(ss, 'Menu Items').filter(hasId_).map(function(x) { return {
-    id:string_(x.id), name:string_(x.name), category:string_(x.category), categoryId:optionalString_(x.categoryId), description:string_(x.description), price:number_(x.price), available:bool_(x.available), kind:string_(x.kind) || 'standard', inventory:undefined, condiments:splitList_(x.condiments), emoji:string_(x.emoji), imageUrl:optionalString_(x.imageUrl), imageAlt:optionalString_(x.imageAlt), displayStyle:string_(x.displayStyle) || 'emoji', __displayOrder:number_(x.displayOrder)
+    id:string_(x.id), name:string_(x.name), category:string_(x.category), categoryId:optionalString_(x.categoryId), description:string_(x.description), price:number_(x.price), available:bool_(x.available), kind:string_(x.kind) || 'standard', inventory:undefined, condiments:splitList_(x.condiments), emoji:string_(x.emoji), imageUrl:optionalString_(restoreLargeCell_(assetMap, x.imageUrl)), imageAlt:optionalString_(x.imageAlt), displayStyle:string_(x.displayStyle) || 'emoji', __displayOrder:number_(x.displayOrder)
   }; }).sort(function(a,b) { return a.__displayOrder - b.__displayOrder; }).map(function(x) { delete x.__displayOrder; return x; });
 
   const menus = rowsAsObjects_(ss, 'Menus').filter(hasId_).map(function(x) { return {
@@ -322,6 +325,81 @@ function restoreActiveContacts_(data) {
 function getSpreadsheet_() {
   if (!SEATSERVE_SPREADSHEET_ID) throw new Error('SEATSERVE_SPREADSHEET_ID is not configured in Code.gs.');
   return SpreadsheetApp.openById(SEATSERVE_SPREADSHEET_ID);
+}
+
+function buildSnapshotRows_(data, updatedAt, workspaceName) {
+  const payload = JSON.stringify(data);
+  const rows = [];
+  const chunkCount = Math.max(1, Math.ceil(payload.length / SNAPSHOT_CHUNK_SIZE));
+  rows.push(['seatserveChunkCount', String(chunkCount)]);
+  rows.push(['seatserveLength', String(payload.length)]);
+  for (let i = 0; i < chunkCount; i += 1) {
+    const key = 'seatserve.' + ('0000' + (i + 1)).slice(-4);
+    rows.push([key, payload.slice(i * SNAPSHOT_CHUNK_SIZE, (i + 1) * SNAPSHOT_CHUNK_SIZE)]);
+  }
+  rows.push(['lastSyncAt', updatedAt]);
+  rows.push(['lastSyncStatus', 'success']);
+  rows.push(['lastSyncSource', 'SeatServe Netlify / app']);
+  rows.push(['appVersion', 'v2.1.6D']);
+  rows.push(['workspaceName', workspaceName]);
+  return rows;
+}
+
+function readSnapshotPayload_(dataSheet) {
+  const rows = dataSheet.getDataRange().getValues().slice(1);
+  const countRow = rows.find(function(row) { return row[0] === 'seatserveChunkCount'; });
+  const chunkCount = countRow ? Number(countRow[1]) : 0;
+  if (chunkCount > 0) {
+    const byKey = {};
+    rows.forEach(function(row) { byKey[String(row[0])] = String(row[1] || ''); });
+    let payload = '';
+    for (let i = 0; i < chunkCount; i += 1) {
+      const key = 'seatserve.' + ('0000' + (i + 1)).slice(-4);
+      if (!(key in byKey)) throw new Error('SeatServe snapshot is incomplete. Missing chunk ' + (i + 1) + ' of ' + chunkCount + '.');
+      payload += byKey[key];
+    }
+    return payload;
+  }
+
+  // Backward compatibility with pre-v2.1.6D single-cell snapshots.
+  const legacy = rows.find(function(row) { return row[0] === 'seatserve'; });
+  return legacy && legacy[1] ? String(legacy[1]) : '';
+}
+
+function storeLargeCell_(assetRows, key, value) {
+  const text = value === undefined || value === null ? '' : String(value);
+  if (text.length <= CELL_CHUNK_SIZE) return text;
+  const chunkCount = Math.ceil(text.length / CELL_CHUNK_SIZE);
+  for (let i = 0; i < chunkCount; i += 1) {
+    assetRows.push([key, i + 1, text.slice(i * CELL_CHUNK_SIZE, (i + 1) * CELL_CHUNK_SIZE)]);
+  }
+  return '@seatserve-asset:' + key;
+}
+
+function readAssetMap_(ss) {
+  const sheet = ss.getSheetByName(ASSET_SHEET);
+  if (!sheet || sheet.getLastRow() < 2) return {};
+  const values = sheet.getDataRange().getValues().slice(1);
+  const grouped = {};
+  values.forEach(function(row) {
+    const key = String(row[0] || '');
+    if (!key) return;
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push({ index: Number(row[1]) || 0, chunk: String(row[2] || '') });
+  });
+  const result = {};
+  Object.keys(grouped).forEach(function(key) {
+    result[key] = grouped[key].sort(function(a, b) { return a.index - b.index; }).map(function(entry) { return entry.chunk; }).join('');
+  });
+  return result;
+}
+
+function restoreLargeCell_(assetMap, value) {
+  const text = value === undefined || value === null ? '' : String(value);
+  const prefix = '@seatserve-asset:';
+  if (text.indexOf(prefix) !== 0) return text;
+  const key = text.slice(prefix.length);
+  return assetMap[key] || '';
 }
 
 function getOrCreate_(ss, name, headers) {
