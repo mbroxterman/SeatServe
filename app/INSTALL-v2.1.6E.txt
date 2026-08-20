@@ -1,0 +1,19 @@
+SeatServe v2.1.6E — Reliability Patch
+Core Fixes & Enhancements
+Resolved Storage Quota Errors (The 5MB Limit)
+
+Image URL Linking: Removed the ability to upload images directly into the app (which converted them into massive base64 strings and crashed the local storage). Replaced the upload button with a simple text field for linking external "Image URLs".
+
+Fixed Cross-Device Syncing & Redirect 404 Errors
+
+Netlify Sync Proxy: Created a serverless function (netlify/functions/sync.ts) to proxy POST requests to Google Apps Script. This completely bypasses the browser CORS and redirect issues that were causing the "Sync failed (HTTP 404)" errors.
+
+Improved Cloud Data Loading
+
+Complete Replace on Load: Fixed a bug where "Load from Sheets" was merging old local data with new cloud data (causing card fees and payment settings to not update). Loading from Sheets now does a complete replacement of the local cache.
+
+Production Auto-Load: The app now automatically checks and loads the latest Google Sheets data upon startup, ensuring all devices (phones, iPads, kitchen screens) are showing the freshest data without requiring a manual sync.
+
+Explicit User Feedback
+
+Action Alerts: Added visible success and failure window alerts for all major cloud actions, including Sync Now, Load from Sheets, and Test Connection. Users will no longer have to guess if a background sync actually worked.
