@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
-import { CirclePlus, Copy, Eye, EyeOff, GripVertical, ImagePlus, Pencil, Search, Trash2, UtensilsCrossed, X } from "lucide-react";
+import { CirclePlus, Copy, Eye, EyeOff, GripVertical, Pencil, Search, Trash2, UtensilsCrossed, X } from "lucide-react";
 import { useSeatServe } from "../../state/SeatServeContext";
 import type { MenuCategory, MenuDefinition, MenuItem } from "../../types/domain";
 import "./MenuManager.css";
@@ -23,44 +23,6 @@ const emptyDraft: MenuDraft = {
   imageAlt: "",
   displayStyle: "image-with-emoji-fallback",
 };
-
-const MAX_UPLOAD_BYTES = 1_500_000;
-const MAX_STORED_IMAGE_EDGE = 900;
-const STORED_IMAGE_QUALITY = 0.82;
-
-async function readImage(file: File, onLoad: (value: string) => void) {
-  if (!file.type.startsWith("image/")) {
-    window.alert("Please choose an image file.");
-    return;
-  }
-  if (file.size > MAX_UPLOAD_BYTES) {
-    window.alert("Please choose an image smaller than 1.5 MB.");
-    return;
-  }
-
-  try {
-    const source = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const image = new Image();
-      const objectUrl = URL.createObjectURL(file);
-      image.onload = () => { URL.revokeObjectURL(objectUrl); resolve(image); };
-      image.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error("Unable to read the selected image.")); };
-      image.src = objectUrl;
-    });
-
-    const scale = Math.min(1, MAX_STORED_IMAGE_EDGE / Math.max(source.naturalWidth, source.naturalHeight));
-    const width = Math.max(1, Math.round(source.naturalWidth * scale));
-    const height = Math.max(1, Math.round(source.naturalHeight * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("Image processing is not available in this browser.");
-    context.drawImage(source, 0, 0, width, height);
-    onLoad(canvas.toDataURL("image/jpeg", STORED_IMAGE_QUALITY));
-  } catch (error) {
-    window.alert(error instanceof Error ? error.message : "Unable to process the selected image.");
-  }
-}
 
 export default function MenuManager() {
   const { data, addMenuCategory, updateMenuCategory, reorderMenuCategories, reorderMenuItems, deleteMenuCategory, addMenuItem, updateMenuItem, duplicateMenuItem, deleteMenuItem, addMenu, updateMenu, deleteMenu, assignMenuToEvent } = useSeatServe();
@@ -139,14 +101,14 @@ export default function MenuManager() {
     event.preventDefault();
     const category = categories.find((entry) => entry.id === draft.categoryId) ?? categories.find((entry) => entry.name === draft.category);
     const condiments = condimentText.split(",").map((value) => value.trim()).filter(Boolean);
-    const clean: MenuDraft = { ...draft, name: draft.name.trim(), category: category?.name ?? draft.category.trim(), categoryId: category?.id ?? draft.categoryId, description: draft.description?.trim(), price: Number(draft.price), condiments, emoji: draft.emoji?.trim() || category?.emoji || "🍽️", imageAlt: draft.imageAlt?.trim() || draft.name.trim() };
+    const clean: MenuDraft = { ...draft, name: draft.name.trim(), category: category?.name ?? draft.category.trim(), categoryId: category?.id ?? draft.categoryId, description: draft.description?.trim(), price: Number(draft.price), condiments, emoji: draft.emoji?.trim() || category?.emoji || "🍽️", imageAlt: draft.imageAlt?.trim() || draft.name.trim(), imageUrl: draft.imageUrl?.trim() };
     if (!clean.name || !clean.category || clean.price < 0) return;
     try {
       if (editing) updateMenuItem(editing.id, clean); else addMenuItem(clean);
       setEditing(null);
       setItemOpen(false);
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Unable to save this menu item. Try a smaller image or remove the image and save again.");
+      window.alert(error instanceof Error ? error.message : "Unable to save this menu item.");
     }
   };
   const submitCategory = (event: FormEvent) => {
@@ -200,41 +162,248 @@ export default function MenuManager() {
   };
   const toggleMenuItem = (itemId: string) => setMenuDraft((current) => ({ ...current, itemIds: current.itemIds.includes(itemId) ? current.itemIds.filter((id) => id !== itemId) : [...current.itemIds, itemId] }));
 
-  return <section className="menu-page">
-    <header className="menu-page__header">
-      <div><p className="menu-eyebrow">Administration</p><h1>Menu Management</h1><p>Create categories, grouped quick-add items, customizable food, condiments, emoji, and images.</p></div>
-      <div className="menu-header-actions"><button className="menu-button" onClick={beginAddCategory}><CirclePlus size={18}/> Add category</button><button className="menu-button menu-button--primary" onClick={beginAdd}><CirclePlus size={18}/> Add item</button></div>
-    </header>
+  return (
+    <section className="menu-page">
+      <header className="menu-page__header">
+        <div>
+          <p className="menu-eyebrow">Administration</p>
+          <h1>Menu Management</h1>
+          <p>Create categories, grouped quick-add items, customizable food, condiments, emoji, and images.</p>
+        </div>
+        <div className="menu-header-actions">
+          <button className="menu-button" onClick={beginAddCategory}><CirclePlus size={18}/> Add category</button>
+          <button className="menu-button menu-button--primary" onClick={beginAdd}><CirclePlus size={18}/> Add item</button>
+        </div>
+      </header>
 
-    <nav className="menu-tabs" aria-label="Menu Management sections"><button className={activeTab === "items" ? "is-active" : ""} onClick={() => setActiveTab("items")}>Items & Categories</button><button className={activeTab === "menus" ? "is-active" : ""} onClick={() => setActiveTab("menus")}>Menus</button><button className={activeTab === "assignments" ? "is-active" : ""} onClick={() => setActiveTab("assignments")}>Event Assignments</button></nav>
+      <nav className="menu-tabs" aria-label="Menu Management sections">
+        <button className={activeTab === "items" ? "is-active" : ""} onClick={() => setActiveTab("items")}>Items and Categories</button>
+        <button className={activeTab === "menus" ? "is-active" : ""} onClick={() => setActiveTab("menus")}>Menus</button>
+        <button className={activeTab === "assignments" ? "is-active" : ""} onClick={() => setActiveTab("assignments")}>Event Assignments</button>
+      </nav>
 
-    {activeTab === "items" && <>
-    <div className="menu-summary"><article><UtensilsCrossed/><span>Total items</span><strong>{data.menuItems.length}</strong></article><article><span>Available</span><strong>{data.menuItems.filter((item) => item.available).length}</strong></article><article><span>Categories</span><strong>{categories.length}</strong></article></div>
+      {activeTab === "items" && (
+        <>
+          <div className="menu-summary">
+            <article><UtensilsCrossed/><span>Total items</span><strong>{data.menuItems.length}</strong></article>
+            <article><span>Available</span><strong>{data.menuItems.filter((item) => item.available).length}</strong></article>
+            <article><span>Categories</span><strong>{categories.length}</strong></article>
+          </div>
 
-    <section className="category-manager"><header><div><h2>Categories</h2><p>Drag categories into the order customers should see them.</p></div><button className="menu-button" onClick={beginAddCategory}><CirclePlus size={16}/> New category</button></header><div className="category-manager__grid">{categories.map((category) => <article key={category.id} draggable onDragStart={() => setDraggedCategoryId(category.id)} onDragOver={(event) => event.preventDefault()} onDrop={() => dropCategory(category.id)} className={`${!category.visible ? "is-hidden " : ""}${draggedCategoryId === category.id ? "is-dragging" : ""}`}><span className="drag-handle" title="Drag to reorder"><GripVertical size={18}/></span><div className="category-visual">{category.imageUrl ? <img src={category.imageUrl} alt=""/> : <span>{category.emoji}</span>}</div><div><strong>{category.name}</strong><small>Order {category.sortOrder} · {data.menuItems.filter((item) => item.categoryId === category.id || item.category === category.name).length} items</small></div><span className="category-visibility">{category.visible ? <Eye size={15}/> : <EyeOff size={15}/>}</span><button onClick={() => beginEditCategory(category)} title="Edit category"><Pencil size={16}/></button><button className="is-danger" title="Delete category" onClick={() => { if (!deleteMenuCategory(category.id)) window.alert("Move or delete the items in this category first."); }}><Trash2 size={16}/></button></article>)}</div></section>
+          <section className="category-manager">
+            <header>
+              <div>
+                <h2>Categories</h2>
+                <p>Drag categories into the order customers should see them.</p>
+              </div>
+              <button className="menu-button" onClick={beginAddCategory}><CirclePlus size={16}/> New category</button>
+            </header>
+            <div className="category-manager__grid">
+              {categories.map((category) => (
+                <article key={category.id} draggable onDragStart={() => setDraggedCategoryId(category.id)} onDragOver={(event) => event.preventDefault()} onDrop={() => dropCategory(category.id)} className={`${!category.visible ? "is-hidden " : ""}${draggedCategoryId === category.id ? "is-dragging" : ""}`}>
+                  <span className="drag-handle" title="Drag to reorder"><GripVertical size={18}/></span>
+                  <div className="category-visual">{category.imageUrl ? <img src={category.imageUrl} alt=""/> : <span>{category.emoji}</span>}</div>
+                  <div><strong>{category.name}</strong><small>Order {category.sortOrder}</small></div>
+                  <span className="category-visibility">{category.visible ? <Eye size={15}/> : <EyeOff size={15}/>}</span>
+                  <button onClick={() => beginEditCategory(category)} title="Edit category"><Pencil size={16}/></button>
+                  <button className="is-danger" title="Delete category" onClick={() => { if (!deleteMenuCategory(category.id)) window.alert("Move or delete the items in this category first."); }}><Trash2 size={16}/></button>
+                </article>
+              ))}
+            </div>
+          </section>
 
-    <div className="menu-toolbar"><label className="menu-search"><Search size={17}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search menu items"/></label><select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="All">All categories</option>{categories.map((value) => <option key={value.id} value={value.id}>{value.name}</option>)}</select></div>
+          <div className="menu-toolbar">
+            <label className="menu-search"><Search size={17}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search menu items"/></label>
+            <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="All">All categories</option>{categories.map((value) => <option key={value.id} value={value.id}>{value.name}</option>)}</select>
+          </div>
 
-    <div className="menu-groups">{groupedItems.map(([group, items]) => <section className="menu-group" key={group.id}><header><div><span className="menu-group__emoji">{group.emoji}</span><span>{group.name}</span><small>{items.length} items · drag to reorder</small></div><strong>{items.filter((item) => item.available).length} available</strong></header><div className="menu-group__rows">{items.map((item) => <article className={`menu-row ${draggedItem?.id === item.id ? "is-dragging" : ""}`} draggable onDragStart={() => setDraggedItem({ id: item.id, categoryId: group.id })} onDragOver={(event) => event.preventDefault()} onDrop={() => dropItem(item.id, group.id)} key={item.id}><span className="drag-handle" title="Drag to reorder"><GripVertical size={18}/></span><div className="menu-item-visual">{item.imageUrl && item.displayStyle !== "emoji" ? <img src={item.imageUrl} alt={item.imageAlt || item.name}/> : <span>{item.emoji || group.emoji}</span>}</div><div className="menu-row__main"><div><strong>{item.name}</strong><span className={item.available ? "menu-status is-active" : "menu-status"}>{item.available ? "Available" : "Sold out"}</span></div><p>{item.description || "No description"}</p><small>{item.kind === "quick-add" ? "Inline quantity" : "Customizable item"}{item.condiments?.length ? ` · ${item.condiments.length} condiments` : ""}</small></div><div className="menu-row__meta"><strong>${item.price.toFixed(2)}</strong><span>{item.available ? "Available" : "Sold out"}</span></div><div className="menu-row__actions"><button title="Edit" onClick={() => beginEdit(item)}><Pencil size={17}/></button><button title="Duplicate item" onClick={() => duplicateAndEdit(item)}><Copy size={17}/></button><button className="is-danger" title="Delete" onClick={() => window.confirm(`Delete ${item.name}?`) && deleteMenuItem(item.id)}><Trash2 size={17}/></button></div></article>)}</div></section>)}{groupedItems.length === 0 && <div className="menu-empty"><UtensilsCrossed size={40}/><h2>No menu items found</h2><p>Add an item or change the current filters.</p></div>}</div>
+          <div className="menu-groups">
+            {groupedItems.map(([group, items]) => (
+              <section className="menu-group" key={group.id}>
+                <header>
+                  <div><span className="menu-group__emoji">{group.emoji}</span><span>{group.name}</span><small>{items.length} items - drag to reorder</small></div>
+                  <strong>{items.filter((item) => item.available).length} available</strong>
+                </header>
+                <div className="menu-group__rows">
+                  {items.map((item) => (
+                    <article className={`menu-row ${draggedItem?.id === item.id ? "is-dragging" : ""}`} draggable onDragStart={() => setDraggedItem({ id: item.id, categoryId: group.id })} onDragOver={(event) => event.preventDefault()} onDrop={() => dropItem(item.id, group.id)} key={item.id}>
+                      <span className="drag-handle" title="Drag to reorder"><GripVertical size={18}/></span>
+                      <div className="menu-item-visual">{item.imageUrl && item.displayStyle !== "emoji" ? <img src={item.imageUrl} alt={item.imageAlt || item.name}/> : <span>{item.emoji || group.emoji}</span>}</div>
+                      <div className="menu-row__main">
+                        <div><strong>{item.name}</strong><span className={item.available ? "menu-status is-active" : "menu-status"}>{item.available ? "Available" : "Sold out"}</span></div>
+                        <p>{item.description || "No description"}</p>
+                        <small>{item.kind === "quick-add" ? "Inline quantity" : "Customizable item"}</small>
+                      </div>
+                      <div className="menu-row__meta"><strong>${item.price.toFixed(2)}</strong><span>{item.available ? "Available" : "Sold out"}</span></div>
+                      <div className="menu-row__actions">
+                        <button title="Edit" onClick={() => beginEdit(item)}><Pencil size={17}/></button>
+                        <button title="Duplicate item" onClick={() => duplicateAndEdit(item)}><Copy size={17}/></button>
+                        <button className="is-danger" title="Delete" onClick={() => window.confirm(`Delete ${item.name}?`) && deleteMenuItem(item.id)}><Trash2 size={17}/></button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            ))}
+            {groupedItems.length === 0 && (
+              <div className="menu-empty">
+                <UtensilsCrossed size={40}/>
+                <h2>No menu items found</h2>
+                <p>Add an item or change the current filters.</p>
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
-    </>}
+      {activeTab === "menus" && (
+        <section className="menu-definitions">
+          <header>
+            <div>
+              <h2>Menus</h2>
+              <p>Create reusable menus for different sports and event levels.</p>
+            </div>
+            <button className="menu-button menu-button--primary" onClick={beginAddMenu}><CirclePlus size={17}/> Add menu</button>
+          </header>
+          <div className="menu-definition-grid">
+            {data.menus.map((menu) => (
+              <article key={menu.id}>
+                <div>
+                  <span className={menu.active ? "menu-status is-active" : "menu-status"}>{menu.active ? "Active" : "Inactive"}</span>
+                  <h3>{menu.name}</h3>
+                  <p>{menu.description || "No description"}</p>
+                  <small>{menu.itemIds.length} items</small>
+                </div>
+                <div className="menu-definition-actions">
+                  <button onClick={() => beginEditMenu(menu)}><Pencil size={16}/> Edit</button>
+                  <button className="is-danger" onClick={() => { if (!deleteMenu(menu.id)) window.alert("This menu is assigned to an event. Reassign the event before deleting it."); }}><Trash2 size={16}/> Delete</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
-    {activeTab === "menus" && <section className="menu-definitions"><header><div><h2>Menus</h2><p>Create reusable menus for different sports and event levels.</p></div><button className="menu-button menu-button--primary" onClick={beginAddMenu}><CirclePlus size={17}/> Add menu</button></header><div className="menu-definition-grid">{data.menus.map((menu) => <article key={menu.id}><div><span className={menu.active ? "menu-status is-active" : "menu-status"}>{menu.active ? "Active" : "Inactive"}</span><h3>{menu.name}</h3><p>{menu.description || "No description"}</p><small>{menu.itemIds.length} items · Used by {data.events.filter((event) => event.menuId === menu.id).length} events</small></div><div className="menu-definition-actions"><button onClick={() => beginEditMenu(menu)}><Pencil size={16}/> Edit</button><button className="is-danger" onClick={() => { if (!deleteMenu(menu.id)) window.alert("This menu is assigned to an event. Reassign the event before deleting it."); }}><Trash2 size={16}/> Delete</button></div></article>)}</div></section>}
+      {activeTab === "assignments" && (
+        <section className="menu-assignments">
+          <header>
+            <h2>Event menu assignments</h2>
+            <p>Only live, scheduled, and draft events in the current workspace are shown. Completed events remain available in Reports.</p>
+          </header>
+          <div>
+            {assignableEvents.map((event) => (
+              <article key={event.id} className={event.status === "live" ? "is-live" : ""}>
+                <div><strong>{event.name}{event.status === "live" ? " - LIVE" : ""}</strong><span>{event.opponent ? `vs. ${event.opponent}` : ""}</span><small>{new Date(event.startsAt).toLocaleString()}</small></div>
+                <label>Menu<select value={event.menuId ?? ""} onChange={(change) => assignMenuToEvent(event.id, change.target.value || undefined)}><option value="">No menu assigned</option>{data.menus.filter((menu) => menu.active).map((menu) => <option key={menu.id} value={menu.id}>{menu.name}</option>)}</select></label>
+              </article>
+            ))}
+            {assignableEvents.length === 0 && <p className="menu-empty-note">No live, scheduled, or draft events exist in this workspace.</p>}
+          </div>
+        </section>
+      )}
 
-    {activeTab === "assignments" && <section className="menu-assignments"><header><h2>Event menu assignments</h2><p>Only live, scheduled, and draft events in the current workspace are shown. Completed events remain available in Reports.</p></header><div>{assignableEvents.map((event) => <article key={event.id} className={event.status === "live" ? "is-live" : ""}><div><strong>{event.name}{event.status === "live" ? " · LIVE" : ""}</strong><span>{event.opponent ? `vs. ${event.opponent}` : ""}</span><small>{new Date(event.startsAt).toLocaleString()} · {event.status}</small></div><label>Menu<select value={event.menuId ?? ""} onChange={(change) => assignMenuToEvent(event.id, change.target.value || undefined)}><option value="">No menu assigned</option>{data.menus.filter((menu) => menu.active).map((menu) => <option key={menu.id} value={menu.id}>{menu.name}</option>)}</select></label></article>)}{assignableEvents.length === 0 && <p className="menu-empty-note">No live, scheduled, or draft events exist in this workspace.</p>}</div></section>}
+      {menuOpen && (
+        <div className="menu-modal-backdrop" onMouseDown={() => setMenuOpen(false)}>
+          <div className="menu-modal menu-modal--wide" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="menu-modal__heading">
+              <div>
+                <p className="menu-eyebrow">Event menu</p>
+                <h2>{editingMenu ? "Edit menu" : "Add menu"}</h2>
+              </div>
+              <button onClick={() => setMenuOpen(false)}><X/></button>
+            </div>
+            <form onSubmit={submitMenu}>
+              <label>Menu name<input required value={menuDraft.name} onChange={(event) => setMenuDraft({ ...menuDraft, name: event.target.value })} placeholder="Varsity Football Menu"/></label>
+              <label>Description<textarea value={menuDraft.description ?? ""} onChange={(event) => setMenuDraft({ ...menuDraft, description: event.target.value })} placeholder="Full game-night menu for varsity football"/></label>
+              <label className="menu-check"><input type="checkbox" checked={menuDraft.active} onChange={(event) => setMenuDraft({ ...menuDraft, active: event.target.checked })}/> Available for event assignment</label>
+              <section className="menu-item-picker">
+                <h3>Items in this menu</h3>
+                <p>Select the reusable products that should appear for this menu.</p>
+                {categories.map((category) => (
+                  <div key={category.id}>
+                    <strong>{category.emoji} {category.name}</strong>
+                    {data.menuItems.filter((item) => item.categoryId === category.id || item.category === category.name).map((item) => (
+                      <label key={item.id}><input type="checkbox" checked={menuDraft.itemIds.includes(item.id)} onChange={() => toggleMenuItem(item.id)}/><span>{item.emoji} {item.name}</span><span>${item.price.toFixed(2)}</span></label>
+                    ))}
+                  </div>
+                ))}
+              </section>
+              <div className="menu-modal__actions">
+                <button type="button" className="menu-button" onClick={() => setMenuOpen(false)}>Cancel</button>
+                <button className="menu-button menu-button--primary" type="submit">Save menu</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
-    {menuOpen && <div className="menu-modal-backdrop" onMouseDown={() => setMenuOpen(false)}><div className="menu-modal menu-modal--wide" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><div className="menu-modal__heading"><div><p className="menu-eyebrow">Event menu</p><h2>{editingMenu ? "Edit menu" : "Add menu"}</h2></div><button onClick={() => setMenuOpen(false)}><X/></button></div><form onSubmit={submitMenu}><label>Menu name<input required value={menuDraft.name} onChange={(event) => setMenuDraft({ ...menuDraft, name: event.target.value })} placeholder="Varsity Football Menu"/></label><label>Description<textarea value={menuDraft.description ?? ""} onChange={(event) => setMenuDraft({ ...menuDraft, description: event.target.value })} placeholder="Full game-night menu for varsity football"/></label><label className="menu-check"><input type="checkbox" checked={menuDraft.active} onChange={(event) => setMenuDraft({ ...menuDraft, active: event.target.checked })}/> Available for event assignment</label><section className="menu-item-picker"><h3>Items in this menu</h3><p>Select the reusable products that should appear for this menu.</p>{categories.map((category) => <div key={category.id}><strong>{category.emoji} {category.name}</strong>{data.menuItems.filter((item) => item.categoryId === category.id || item.category === category.name).map((item) => <label key={item.id}><input type="checkbox" checked={menuDraft.itemIds.includes(item.id)} onChange={() => toggleMenuItem(item.id)}/><span>{item.emoji} {item.name}</span><span>${item.price.toFixed(2)}</span></label>)}</div>)}</section><div className="menu-modal__actions"><button type="button" className="menu-button" onClick={() => setMenuOpen(false)}>Cancel</button><button className="menu-button menu-button--primary" type="submit">Save menu</button></div></form></div></div>}
+      {itemOpen && (
+        <div className="menu-modal-backdrop" onMouseDown={() => setItemOpen(false)}>
+          <div className="menu-modal menu-modal--wide" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="menu-modal__heading">
+              <div>
+                <p className="menu-eyebrow">Menu item</p>
+                <h2>{editing ? "Edit item" : "Add item"}</h2>
+              </div>
+              <button onClick={() => setItemOpen(false)}><X/></button>
+            </div>
+            <form onSubmit={submitItem}>
+              <div className="menu-form-grid">
+                <label>Item name<input required value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/></label>
+                <label>Category<select required value={draft.categoryId} onChange={(event) => chooseCategory(event.target.value)}>{categories.map((category) => <option value={category.id} key={category.id}>{category.emoji} {category.name}</option>)}</select></label>
+              </div>
+              <label>Description<textarea value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })}/></label>
+              <div className="menu-form-grid menu-form-grid--single">
+                <label>Price<input required type="number" min="0" step="0.01" value={draft.price} onChange={(event) => setDraft({ ...draft, price: Number(event.target.value) })}/></label>
+              </div>
+              <div className="menu-form-grid">
+                <label>Customer interaction<select value={draft.kind ?? "standard"} onChange={(event) => setDraft({ ...draft, kind: event.target.value as MenuItem["kind"] })}><option value="standard">Open customization sheet</option><option value="quick-add">Inline quantity controls</option></select></label>
+                <label>Display style<select value={draft.displayStyle ?? "image-with-emoji-fallback"} onChange={(event) => setDraft({ ...draft, displayStyle: event.target.value as MenuItem["displayStyle"] })}><option value="emoji">Emoji only</option><option value="image">Image only</option><option value="image-with-emoji-fallback">Image with emoji fallback</option></select></label>
+              </div>
+              <section className="appearance-editor">
+                <div className="appearance-preview">{draft.imageUrl && draft.displayStyle !== "emoji" ? <img src={draft.imageUrl} alt="Preview"/> : <span>{draft.emoji || "🍽️"}</span>}</div>
+                <div>
+                  <label>Emoji icon<input value={draft.emoji ?? ""} onChange={(event) => setDraft({ ...draft, emoji: event.target.value })} placeholder="🍔"/></label>
+                  <label>Image URL<input type="text" placeholder="https://example.com/image.png" value={draft.imageUrl ?? ""} onChange={(event) => setDraft((current) => ({ ...current, imageUrl: event.target.value }))}/></label>
+                  {draft.imageUrl && <button type="button" className="text-button" onClick={() => setDraft({ ...draft, imageUrl: "" })}>Remove image</button>}
+                </div>
+              </section>
+              <label>Condiments<small>Editable for this item; separate choices with commas. Leave blank when none apply.</small><input value={condimentText} onChange={(event) => setCondimentText(event.target.value)} placeholder="Ketchup, Mustard, Pickles, Onions"/></label>
+              <label className="menu-check"><input type="checkbox" checked={draft.available} onChange={(event) => setDraft({ ...draft, available: event.target.checked })}/> Available to customers</label>
+              <div className="menu-modal__actions">
+                <button type="button" className="menu-button" onClick={() => setItemOpen(false)}>Cancel</button>
+                <button className="menu-button menu-button--primary" type="submit">Save item</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
-    {itemOpen && <div className="menu-modal-backdrop" onMouseDown={() => setItemOpen(false)}><div className="menu-modal menu-modal--wide" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><div className="menu-modal__heading"><div><p className="menu-eyebrow">Menu item</p><h2>{editing ? "Edit item" : "Add item"}</h2></div><button onClick={() => setItemOpen(false)}><X/></button></div><form onSubmit={submitItem}>
-      <div className="menu-form-grid"><label>Item name<input required value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/></label><label>Category<select required value={draft.categoryId} onChange={(event) => chooseCategory(event.target.value)}>{categories.map((category) => <option value={category.id} key={category.id}>{category.emoji} {category.name}</option>)}</select></label></div>
-      <label>Description<textarea value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })}/></label>
-      <div className="menu-form-grid menu-form-grid--single"><label>Price<input required type="number" min="0" step="0.01" value={draft.price} onChange={(event) => setDraft({ ...draft, price: Number(event.target.value) })}/></label></div>
-      <div className="menu-form-grid"><label>Customer interaction<select value={draft.kind ?? "standard"} onChange={(event) => setDraft({ ...draft, kind: event.target.value as MenuItem["kind"] })}><option value="standard">Open customization sheet</option><option value="quick-add">Inline quantity controls</option></select></label><label>Display style<select value={draft.displayStyle ?? "image-with-emoji-fallback"} onChange={(event) => setDraft({ ...draft, displayStyle: event.target.value as MenuItem["displayStyle"] })}><option value="emoji">Emoji only</option><option value="image">Image only</option><option value="image-with-emoji-fallback">Image with emoji fallback</option></select></label></div>
-      <section className="appearance-editor"><div className="appearance-preview">{draft.imageUrl && draft.displayStyle !== "emoji" ? <img src={draft.imageUrl} alt="Preview"/> : <span>{draft.emoji || "🍽️"}</span>}</div><div><label>Emoji icon<input value={draft.emoji ?? ""} onChange={(event) => setDraft({ ...draft, emoji: event.target.value })} placeholder="🍔"/></label><label className="image-upload"><ImagePlus size={17}/> Upload custom image<input type="file" accept="image/*" onChange={(event: ChangeEvent<HTMLInputElement>) => { const input = event.currentTarget; const file = input.files?.[0]; if (file) void readImage(file, (imageUrl) => setDraft((current) => ({ ...current, imageUrl }))); input.value = ""; }}/></label>{draft.imageUrl && <button type="button" className="text-button" onClick={() => setDraft({ ...draft, imageUrl: "" })}>Remove image</button>}</div></section>
-      <label>Condiments <small>Editable for this item; separate choices with commas. Leave blank when none apply.</small><input value={condimentText} onChange={(event) => setCondimentText(event.target.value)} placeholder="Ketchup, Mustard, Pickles, Onions"/></label>
-      <label className="menu-check"><input type="checkbox" checked={draft.available} onChange={(event) => setDraft({ ...draft, available: event.target.checked })}/> Available to customers</label><div className="menu-modal__actions"><button type="button" className="menu-button" onClick={() => setItemOpen(false)}>Cancel</button><button className="menu-button menu-button--primary" type="submit">Save item</button></div>
-    </form></div></div>}
-
-    {categoryOpen && <div className="menu-modal-backdrop" onMouseDown={() => setCategoryOpen(false)}><div className="menu-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><div className="menu-modal__heading"><div><p className="menu-eyebrow">Category</p><h2>{editingCategory ? "Edit category" : "Add category"}</h2></div><button onClick={() => setCategoryOpen(false)}><X/></button></div><form onSubmit={submitCategory}><div className="menu-form-grid"><label>Category name<input required value={categoryDraft.name} onChange={(event) => setCategoryDraft({ ...categoryDraft, name: event.target.value })} placeholder="Entrées"/></label><label>Emoji<input value={categoryDraft.emoji} onChange={(event) => setCategoryDraft({ ...categoryDraft, emoji: event.target.value })} placeholder="🍔"/></label></div><label>Display order<input type="number" min="1" value={categoryDraft.sortOrder} onChange={(event) => setCategoryDraft({ ...categoryDraft, sortOrder: Number(event.target.value) })}/></label><label className="menu-check"><input type="checkbox" checked={categoryDraft.visible} onChange={(event) => setCategoryDraft({ ...categoryDraft, visible: event.target.checked })}/> Visible in Customer Ordering</label><div className="menu-modal__actions"><button type="button" className="menu-button" onClick={() => setCategoryOpen(false)}>Cancel</button><button className="menu-button menu-button--primary" type="submit">Save category</button></div></form></div></div>}
-  </section>;
+      {categoryOpen && (
+        <div className="menu-modal-backdrop" onMouseDown={() => setCategoryOpen(false)}>
+          <div className="menu-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="menu-modal__heading">
+              <div>
+                <p className="menu-eyebrow">Category</p>
+                <h2>{editingCategory ? "Edit category" : "Add category"}</h2>
+              </div>
+              <button onClick={() => setCategoryOpen(false)}><X/></button>
+            </div>
+            <form onSubmit={submitCategory}>
+              <div className="menu-form-grid">
+                <label>Category name<input required value={categoryDraft.name} onChange={(event) => setCategoryDraft({ ...categoryDraft, name: event.target.value })} placeholder="Entrées"/></label>
+                <label>Emoji<input value={categoryDraft.emoji} onChange={(event) => setCategoryDraft({ ...categoryDraft, emoji: event.target.value })} placeholder="🍔"/></label>
+              </div>
+              <label>Display order<input type="number" min="1" value={categoryDraft.sortOrder} onChange={(event) => setCategoryDraft({ ...categoryDraft, sortOrder: Number(event.target.value) })}/></label>
+              <label className="menu-check"><input type="checkbox" checked={categoryDraft.visible} onChange={(event) => setCategoryDraft({ ...categoryDraft, visible: event.target.checked })}/> Visible in Customer Ordering</label>
+              <div className="menu-modal__actions">
+                <button type="button" className="menu-button" onClick={() => setCategoryOpen(false)}>Cancel</button>
+                <button className="menu-button menu-button--primary" type="submit">Save category</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </section>
+  );
 }
