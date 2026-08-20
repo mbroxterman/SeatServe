@@ -79,29 +79,65 @@ export default function MenuManager() {
         setCondimentText("");
         setItemOpen(true);
     };
+
     const beginEdit = (item: MenuItem) => {
         setEditing(item);
-        setDraft({ ...item, description: item.description ?? "", condiments: item.condiments ?? [], emoji: item.emoji ?? "🍽️", imageUrl: item.imageUrl ?? "", imageAlt: item.imageAlt ?? item.name, displayStyle: item.displayStyle ?? "image-with-emoji-fallback" });
-        setCondimentText((item.condiments ?? []).join(", "));
+        setDraft({
+            ...item,
+            description: item.description ?? "",
+            condiments: item.condiments ?? [],
+            emoji: item.emoji ?? "🍽️",
+            imageUrl: item.imageUrl ?? "",
+            imageAlt: item.imageAlt ?? item.name,
+            displayStyle: item.displayStyle ?? "image-with-emoji-fallback"
+        });
+        // Bulletproof array mapping to prevent undefined crashes
+        setCondimentText(Array.isArray(item.condiments) ? item.condiments.join(", ") : "");
         setItemOpen(true);
     };
+
     const duplicateAndEdit = (item: MenuItem) => {
         const newId = duplicateMenuItem(item.id);
         if (!newId) return;
-        const copy: MenuItem = { ...item, id: newId, name: `${item.name} Copy`, condiments: [...(item.condiments ?? [])] };
+        const copy: MenuItem = { ...item, id: newId, name: `${item.name || ""} Copy`, condiments: [...(item.condiments ?? [])] };
         setEditing(copy);
-        setDraft({ ...copy, description: copy.description ?? "", condiments: [...(copy.condiments ?? [])], emoji: copy.emoji ?? "🍽️", imageUrl: copy.imageUrl ?? "", imageAlt: copy.imageAlt ?? copy.name, displayStyle: copy.displayStyle ?? "image-with-emoji-fallback" });
-        setCondimentText((copy.condiments ?? []).join(", "));
+        setDraft({
+            ...copy,
+            description: copy.description ?? "",
+            condiments: [...(copy.condiments ?? [])],
+            emoji: copy.emoji ?? "🍽️",
+            imageUrl: copy.imageUrl ?? "",
+            imageAlt: copy.imageAlt ?? copy.name,
+            displayStyle: copy.displayStyle ?? "image-with-emoji-fallback"
+        });
+        setCondimentText(Array.isArray(copy.condiments) ? copy.condiments.join(", ") : "");
         setItemOpen(true);
     };
+
     const beginAddCategory = () => { setEditingCategory(null); setCategoryDraft({ ...emptyCategory, sortOrder: categories.length + 1 }); setCategoryOpen(true); };
     const beginEditCategory = (category: MenuCategory) => { setEditingCategory(category); setCategoryDraft({ name: category.name, emoji: category.emoji, imageUrl: category.imageUrl ?? "", visible: category.visible, sortOrder: category.sortOrder }); setCategoryOpen(true); };
 
     const submitItem = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         const category = categories.find((entry) => entry.id === draft.categoryId) ?? categories.find((entry) => entry.name === draft.category);
-        const condiments = condimentText.split(",").map((value) => value.trim()).filter(Boolean);
-        const clean: MenuDraft = { ...draft, name: draft.name.trim(), category: category?.name ?? draft.category.trim(), categoryId: category?.id ?? draft.categoryId, description: draft.description?.trim(), price: Number(draft.price), condiments, emoji: draft.emoji?.trim() || category?.emoji || "🍽️", imageAlt: draft.imageAlt?.trim() || draft.name.trim(), imageUrl: draft.imageUrl?.trim() };
+
+        // NULL-SAFETY FIX: Prevent the 'split' crash if condimentText is completely undefined
+        const safeCondimentText = typeof condimentText === "string" ? condimentText : "";
+        const condiments = safeCondimentText.split(",").map((value) => value.trim()).filter(Boolean);
+
+        const clean: MenuDraft = {
+            ...draft,
+            name: (draft.name || "").trim(),
+            category: (category?.name || draft.category || "").trim(),
+            categoryId: category?.id ?? draft.categoryId,
+            description: (draft.description || "").trim(),
+            price: Number(draft.price) || 0,
+            condiments,
+            emoji: (draft.emoji || "").trim() || category?.emoji || "🍽️",
+            imageAlt: (draft.imageAlt || "").trim() || (draft.name || "").trim(),
+            imageUrl: (draft.imageUrl || "").trim()
+        };
+
         if (!clean.name || !clean.category || clean.price < 0) return;
         try {
             if (editing) updateMenuItem(editing.id, clean); else addMenuItem(clean);
@@ -111,13 +147,15 @@ export default function MenuManager() {
             window.alert(error instanceof Error ? error.message : "Unable to save this menu item.");
         }
     };
+
     const submitCategory = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-        const clean = { ...categoryDraft, name: categoryDraft.name.trim(), emoji: categoryDraft.emoji.trim() || "🍽️", sortOrder: Math.max(1, Number(categoryDraft.sortOrder)) };
+        const clean = { ...categoryDraft, name: (categoryDraft.name || "").trim(), emoji: (categoryDraft.emoji || "").trim() || "🍽️", sortOrder: Math.max(1, Number(categoryDraft.sortOrder)) };
         if (!clean.name) return;
         if (editingCategory) updateMenuCategory(editingCategory.id, clean); else addMenuCategory(clean);
         setCategoryOpen(false);
     };
+
     const chooseCategory = (id: string) => {
         const category = categories.find((entry) => entry.id === id);
         setDraft((current) => ({ ...current, categoryId: id, category: category?.name ?? current.category, emoji: current.emoji || category?.emoji || "🍽️" }));
@@ -155,7 +193,7 @@ export default function MenuManager() {
     };
     const submitMenu = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-        const clean = { ...menuDraft, name: menuDraft.name.trim(), description: menuDraft.description?.trim(), itemIds: Array.from(new Set(menuDraft.itemIds)), priceOverrides: menuDraft.priceOverrides ?? {}, hiddenItemIds: menuDraft.hiddenItemIds ?? [] };
+        const clean = { ...menuDraft, name: (menuDraft.name || "").trim(), description: (menuDraft.description || "").trim(), itemIds: Array.from(new Set(menuDraft.itemIds)), priceOverrides: menuDraft.priceOverrides ?? {}, hiddenItemIds: menuDraft.hiddenItemIds ?? [] };
         if (!clean.name) return;
         if (editingMenu) updateMenu(editingMenu.id, clean); else addMenu(clean);
         setMenuOpen(false);
