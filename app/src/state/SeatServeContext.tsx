@@ -517,7 +517,6 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
         });
     };
 
-
     const markOrderPaymentCollected = (orderId: string) => {
         setData((current) => {
             const order = current.orders.find((item) => item.id === orderId);
@@ -538,12 +537,14 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
         const now = new Date().toISOString();
         return { ...current, orders: current.orders.map((item) => item.id === orderId ? { ...item, seatBeaconRequestedAt: now } : item), activity: pushActivity(current, `SeatBeacon requested for order ${orderId}`, "info") };
     });
+
     const markSeatBeaconOpened = (orderId: string) => setData((current) => {
         const order = current.orders.find((item) => item.id === orderId);
         if (!order || order.seatBeaconOpenedAt) return current;
         const now = new Date().toISOString();
         return { ...current, orders: current.orders.map((item) => item.id === orderId ? { ...item, seatBeaconOpenedAt: now } : item), activity: pushActivity(current, `SeatBeacon activated for order ${orderId}`, "success") };
     });
+
     const markCustomerLocated = (orderId: string) => setData((current) => {
         const order = current.orders.find((item) => item.id === orderId);
         if (!order || order.status !== "delivering" || order.customerLocatedAt) return current;
