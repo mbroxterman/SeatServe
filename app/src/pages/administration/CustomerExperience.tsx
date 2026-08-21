@@ -1,8 +1,8 @@
 import { Download, ExternalLink, FileDown, MapPin, Printer, QrCode, ShieldCheck, ShoppingBag, UsersRound } from "lucide-react";
 import QRCode from "qrcode";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { useSeatServe } from "../../state/SeatServeContext";
+import type { CustomerExperienceSettings } from "../../types/domain";
 import "./CustomerExperience.css";
 
 type QrEntry = { id:string; kind:"staff"|"zone"; title:string; subtitle:string; url:string; filename:string; venueName?:string };
@@ -58,7 +58,10 @@ async function renderLetterPage(entry:QrEntry, qrImage:string, origin:string) {
 }
 
 export default function CustomerExperience(){
-  const {data,activeEvent}=useSeatServe(); const [qrImages,setQrImages]=useState<Record<string,string>>({}); const [busy,setBusy]=useState(false); const origin=window.location.origin;
+  const {data,activeEvent, updateCustomerExperience}=useSeatServe(); 
+  const [experience, setExperience] = useState<CustomerExperienceSettings>(data.customerExperience); 
+  const [qrImages,setQrImages]=useState<Record<string,string>>({}); 
+  const origin=window.location.origin;
   const activeVenue=data.venues.find(item=>item.id===activeEvent?.venueId);
   const entries=useMemo<QrEntry[]>(()=>{
     const staff:QrEntry={id:"staff",kind:"staff",title:"SeatServe Staff",subtitle:"Kitchen · Runner · Administration",url:`${origin}/staff`,filename:"seatserve-staff-qr.png"};
@@ -67,10 +70,69 @@ export default function CustomerExperience(){
   },[data.venues,origin]);
   useEffect(()=>{let cancelled=false;Promise.all(entries.map(async e=>[e.id,await QRCode.toDataURL(e.url,{width:900,margin:2,errorCorrectionLevel:"M",color:{dark:"#071a3d",light:"#ffffff"}})] as const)).then(p=>!cancelled&&setQrImages(Object.fromEntries(p))).catch(()=>!cancelled&&setQrImages({}));return()=>{cancelled=true}},[entries]);
 
-  const printEntries=(selected:QrEntry[])=>{const printable=selected.filter(e=>qrImages[e.id]);if(!printable.length)return;const popup=window.open("","_blank");if(!popup)return;const pages=printable.map(e=>`<section class="page"><img class="logo" src="${origin}/seatserve-web-logo.png"><h1>${escapeHtml(e.title)}</h1><h2>${e.kind==="staff"?"STAFF ONLY":"SCAN TO ORDER CONCESSIONS"}</h2><p>${escapeHtml(e.subtitle)}</p><img class="qr" src="${qrImages[e.id]}"><strong>${e.kind==="staff"?"Scan for SeatServe Staff Access":"Open your camera and scan the code above"}</strong><small>${escapeHtml(e.url)}</small></section>`).join("");popup.document.write(`<!doctype html><html><head><title>SeatServe QR Signs</title><style>@page{size:letter portrait;margin:.35in}*{box-sizing:border-box}body{margin:0;font-family:Arial;color:#071a3d}.page{height:10.3in;page-break-after:always;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:.15in}.page:last-child{page-break-after:auto}.logo{width:7.1in;height:1in;object-fit:contain;background:#071a3d;border-radius:14px;padding:8px}h1{font-size:48px;margin:.22in 0 .08in}h2{font-size:21px;letter-spacing:.12em;margin:.02in 0;color:#334155}.qr{width:6.25in;height:6.25in;object-fit:contain;margin:.18in 0}.page>strong{font-size:20px}.page>p{margin:.06in 0;color:#475569;font-size:18px}.page>small{margin-top:.18in;color:#64748b;word-break:break-all;font-size:10px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>${pages}<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),350));<\/script></body></html>`);popup.document.close();};
-  const exportPdf=async(selected:QrEntry[])=>{const printable=selected.filter(e=>qrImages[e.id]);if(!printable.length)return;setBusy(true);try{const pages=[];for(const e of printable)pages.push(await renderLetterPage(e,qrImages[e.id],origin));const blob=pdfFromJpegs(pages);const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=printable.length===1?printable[0].filename.replace(/\.png$/i,".pdf"):"seatserve-qr-signs.pdf";a.click();URL.revokeObjectURL(url);}finally{setBusy(false)}};
+  const printEntries=(selected:QrEntry[])=>{
+    const printable=selected.filter(e=>qrImages[e.id]);if(!printable.length)return;const popup=window.open("","_blank");if(!popup)return;
+    const scriptFix = "</scr" + "ipt>";
+      const pages = printable.map(e => `<section class="page"><img class="logo" src="${origin}/seatserve-web-logo.png"><h1>${escapeHtml(e.title)}</h1><h2>${e.kind === "staff" ? "STAFF ONLY" : "SCAN TO ORDER CONCESSIONS"}</h2><p>${escapeHtml(e.subtitle)}</p><img class="qr" src="${qrImages[e.id]}"><strong>${e.kind === "staff" ? "Scan for SeatServe Staff Access" : "Open your camera and scan the code above"}</strong><small>${escapeHtml(e.url)}</small></section>`).join("");
+      popup.document.write(`<!doctype html><html><head><title>SeatServe QR Signs</title><style>@page{size:letter portrait;margin:.35in}*{box-sizing:border-box}body{margin:0;font-family:Arial;color:#071a3d}.page{height:10.3in;page-break-after:always;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:.15in}.page:last-child{page-break-after:auto}.logo{width:7.1in;height:1in;object-fit:contain;background:#071a3d;border-radius:14px;padding:8px}h1{font-size:48px;margin:.22in 0 .08in}h2{font-size:21px;letter-spacing:.12em;margin:.02in 0;color:#334155}.qr{width:6.25in;height:6.25in;object-fit:contain;margin:.18in 0}.page>strong{font-size:20px}.page>p{margin:.06in 0;color:#475569;font-size:18px}.page>small{margin-top:.18in;color:#64748b;word-break:break-all;font-size:10px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>${pages}<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),350));${scriptFix}</body></html>`);
+    popup.document.close();
+  };
+  const exportPdf=async(selected:QrEntry[])=>{const printable=selected.filter(e=>qrImages[e.id]);if(!printable.length)return;const pages=[];for(const e of printable)pages.push(await renderLetterPage(e,qrImages[e.id],origin));const blob=pdfFromJpegs(pages);const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=printable.length===1?printable[0].filename.replace(/\.png$/i,".pdf"):"seatserve-qr-signs.pdf";a.click();URL.revokeObjectURL(url);};
   const staffEntry=entries[0], zoneEntries=entries.slice(1); const byVenue=data.venues.filter(v=>v.active).map(venue=>({venue,entries:zoneEntries.filter(e=>e.venueName===venue.name)})).filter(g=>g.entries.length);
-  return <section className="customer-experience-page"><div className="customer-experience-heading"><div><p className="eyebrow">Pilot QR generator</p><h2>Print-ready staff &amp; customer QR signs</h2><p>Each QR prints on its own 8.5×11 page with the current location name and SeatServe branding.</p></div><div className="customer-experience-heading__actions"><button className="secondary-button is-button" onClick={()=>printEntries(entries)}><Printer size={17}/> Print all</button><button className="secondary-button is-button" disabled={busy} onClick={()=>exportPdf(entries)}><FileDown size={17}/> {busy?"Building PDF…":"Export all PDF"}</button><Link className="secondary-button" to="/admin/venues">Manage Venue &amp; Zones</Link></div></div>
+  return <section className="customer-experience-page">
+    <div className="customer-experience-heading">
+      <div>
+        <p className="eyebrow">Customer Experience</p>
+        <h2>Financials &amp; Settings</h2>
+        <p>Control delivery fees, tax rates, payment methods, and customer-facing QR codes.</p>
+      </div>
+      <div className="customer-experience-heading__actions">
+         <button className="primary-button is-button" onClick={() => updateCustomerExperience(experience)}>Save Settings</button>
+      </div>
+    </div>
+    
+    <section className="customer-experience-panel">
+        <div className="customer-experience-panel__heading">
+            <div>
+            <p className="eyebrow">Checkout settings</p>
+            <h3>Financials</h3>
+            </div>
+        </div>
+        <div className="experience-form-grid">
+            <label>
+                Minimum order amount ($)
+                <input type="number" min="0" step="0.01" value={experience.minimumOrderAmount ?? 0} onChange={(event) => setExperience({ ...experience, minimumOrderAmount: Number(event.target.value) })} />
+            </label>
+            <label>
+                Delivery fee ($)
+                <input type="number" min="0" step="0.01" value={experience.deliveryFee} onChange={(event) => setExperience({ ...experience, deliveryFee: Number(event.target.value) })} />
+            </label>
+            <label>
+                Tax rate (%)
+                <input type="number" min="0" step="0.001" value={experience.taxRatePercent} onChange={(event) => setExperience({ ...experience, taxRatePercent: Number(event.target.value) })} />
+            </label>
+            <label>
+                Estimated card fee (%)
+                <input type="number" min="0" step="0.01" value={experience.estimatedCardFeePercent} onChange={(event) => setExperience({ ...experience, estimatedCardFeePercent: Number(event.target.value) })} />
+            </label>
+            <label>
+                Estimated fixed card fee ($)
+                <input type="number" min="0" step="0.01" value={experience.estimatedCardFeeFixed} onChange={(event) => setExperience({ ...experience, estimatedCardFeeFixed: Number(event.target.value) })} />
+            </label>
+        </div>
+        <div className="experience-form-group">
+            <strong>Accepted payment methods</strong>
+            <label className="experience-check">
+                <input type="checkbox" checked={experience.cashPaymentsEnabled} onChange={(event) => setExperience({ ...experience, cashPaymentsEnabled: event.target.checked })} />
+                Enable exact cash collection on delivery
+            </label>
+            <label className="experience-check">
+                <input type="checkbox" checked={experience.cardPaymentsEnabled} onChange={(event) => setExperience({ ...experience, cardPaymentsEnabled: event.target.checked })} />
+                Enable credit card payments via Stripe Terminal
+            </label>
+        </div>
+    </section>
+
     <section className="customer-experience-summary"><div className="customer-experience-icon"><ShoppingBag size={24}/></div><div><span>Current live event</span><h3>{activeEvent?`${activeEvent.name} vs ${activeEvent.opponent}`:"No live event"}</h3><p>{activeVenue?.name??"QR signs remain reusable across events"} · Ordering {activeEvent?.orderingEnabled?"open":"closed"}</p></div></section>
     <section className="customer-experience-panel qr-staff-panel"><div className="customer-experience-panel__heading"><div><p className="eyebrow">Staff QR</p><h3>Single staff entry sign</h3></div><span><ShieldCheck size={15}/> PIN protected</span></div><QrCard entry={staffEntry} image={qrImages[staffEntry.id]} onPrint={()=>printEntries([staffEntry])} onPdf={()=>exportPdf([staffEntry])}/></section>
     <section className="customer-experience-panel"><div className="customer-experience-panel__heading"><div><p className="eyebrow">Customer zone QR codes</p><h3>Readable location links</h3></div><span>{zoneEntries.length} active zones</span></div>{byVenue.length?byVenue.map(({venue,entries:venueEntries})=><section className="qr-venue-group" key={venue.id}><div className="qr-venue-group__heading"><div><MapPin size={18}/><strong>{venue.name}</strong><span>{venueEntries.length} zones</span></div><div><button onClick={()=>printEntries(venueEntries)}><Printer size={15}/> Print venue</button><button onClick={()=>exportPdf(venueEntries)}><FileDown size={15}/> PDF</button></div></div><div className="customer-zone-grid">{venueEntries.map(e=><QrCard key={e.id} entry={e} image={qrImages[e.id]} onPrint={()=>printEntries([e])} onPdf={()=>exportPdf([e])} compact/>)}</div></section>):<div className="customer-experience-empty"><QrCode size={30}/><h3>No customer zone QR codes available</h3><p>Add an active venue and at least one delivery-enabled zone.</p></div>}</section>

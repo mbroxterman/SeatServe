@@ -1,7 +1,16 @@
 // File location: /src/state/SeatServeContext.tsx
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { seedData } from "../data/seed";
-import { createLocalBackup, getActiveDataStorageKey, getActiveWorkspaceId, getSyncConfig, isDeploymentManagedSync, markLocalChange, pollGoogleSheets } from "../services/persistence";
+import {
+    createLocalBackup,
+    getActiveDataStorageKey,
+    getActiveWorkspaceId,
+    getSyncConfig,
+    isDeploymentManagedSync,
+    markLocalChange,
+    pollGoogleSheets,
+    pushToGoogleSheets
+} from "../services/persistence";
 import type {
     ActivityItem,
     DeliveryZone,
@@ -204,73 +213,44 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
         }));
     };
 
-    const pushToGoogleSheets = async (dataToPush: SeatServeData) => {
-        const config = getSyncConfig();
-        if (!config.connected || !config.endpointUrl) {
-            window.alert("Sync failed: Google Sheets URL is not configured.");
-            return;
-        }
-        window.alert("Syncing with Google Sheets...");
-        try {
-            const response = await fetch("/.netlify/functions/sync", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    googleScriptUrl: config.endpointUrl,
-                    data: { action: "save", payload: dataToPush },
-                }),
-            });
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Sync failed with status ${response.status}: ${errorText}`);
-            }
-            const result = await response.json();
-            if (result.status !== "ok") throw new Error(result.message || "The sync endpoint returned an error.");
-            window.alert("Sync successful! All local data has been saved to Google Sheets.");
-        } catch (error) {
-            console.error("Push to Google Sheets failed", error);
-            window.alert(`Sync failed. Could not save data to Google Sheets. ${error instanceof Error ? error.message : "See console for details."}`);
-        }
-    };
-
+    // --- SAFE SILENT AUTO-LOAD ---
     useEffect(() => {
-        const loadFromSheets = async (isAutoLoad = false) => {
+        const performSilentLoad = async () => {
+            // Yield to the microtask queue to avoid synchronous setState warnings
+            await Promise.resolve();
+
             const config = getSyncConfig();
             if (!config.connected || !config.endpointUrl) {
-                if (!isAutoLoad) window.alert("Load failed: Google Sheets URL is not configured.");
-                if (isAutoLoad) setCloudBootstrapReady(true);
+                setCloudBootstrapReady(true);
                 return;
             }
-            if (!isAutoLoad) window.alert("Loading data from Google Sheets...");
+
             try {
                 const result = await pollGoogleSheets(currentDataRef.current);
                 if (result.data) {
-                    replaceData(result.data, "Loaded latest data from Google Sheets");
-                    if (!isAutoLoad) window.alert("Load successful!");
-                } else if (!isAutoLoad) {
-                    window.alert("No new data was found in Google Sheets.");
+                    createLocalBackup(currentDataRef.current, "before-auto-load");
+                    replacingDataRef.current = true;
+                    setData(migrateData({
+                        ...result.data,
+                        activity: [activity("Loaded latest data from cloud", "success"), ...(result.data.activity ?? [])].slice(0, 20),
+                    }));
                 }
             } catch (error) {
-                console.error("Load from Google Sheets failed", error);
-                if (!isAutoLoad) {
-                    window.alert(`Load failed. Could not get data from Google Sheets. ${error instanceof Error ? error.message : "Using local data instead."}`);
-                }
+                console.error("Background auto-load failed", error);
             } finally {
-                if (isAutoLoad) {
-                    setCloudBootstrapReady(true);
-                }
+                setCloudBootstrapReady(true);
             }
         };
 
-        loadFromSheets(true);
-
-        const onVisible = () => { if (document.visibilityState === "visible") void loadFromSheets(true); };
+        void performSilentLoad();
+        const onVisible = () => { if (document.visibilityState === "visible") void performSilentLoad(); };
         document.addEventListener("visibilitychange", onVisible);
 
         return () => {
             document.removeEventListener("visibilitychange", onVisible);
         };
     }, [workspaceRevision]);
+
 
     useEffect(() => {
         const applyExternalData = (candidate: SeatServeData) => {
@@ -334,6 +314,11 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
     }, []);
 
     useEffect(() => {
+        // STRICT MODE GUARD: Prevent double-firing on initial load
+        if (didMountRef.current && currentDataRef.current === data) {
+            return;
+        }
+
         let cancelled = false;
         window.clearTimeout(autoSyncTimerRef.current);
         autoSyncTimerRef.current = undefined;
@@ -512,6 +497,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
             };
         });
     };
+
 
     const markOrderPaymentCollected = (orderId: string) => {
         setData((current) => {
