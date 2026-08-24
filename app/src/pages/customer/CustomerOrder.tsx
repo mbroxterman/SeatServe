@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { useSeatServe } from "../../state/SeatServeContext";
+import { getActiveWorkspace, saveWorkspace } from "../../services/persistence";
 import type { FulfillmentMethod, MenuItem, OrderItem, PaymentMethod } from "../../types/domain";
 import "./CustomerOrder.css";
 
@@ -40,6 +41,19 @@ const categoryIcon = (category: string) => {
 export default function CustomerOrder() {
     const { eventId, venueId, zoneId } = useParams();
     const { data, placeOrder } = useSeatServe();
+
+    // Workspace Auto-Switcher
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const workspaceName = params.get("w");
+        if (workspaceName) {
+            const active = getActiveWorkspace();
+            if (active.name !== workspaceName) {
+                saveWorkspace({ ...active, name: workspaceName });
+            }
+        }
+    }, []);
+
     const event = data.events.find((item) => item.id === eventId);
     const venue = data.venues.find((item) => item.id === venueId);
     const zone = venue?.zones.find((item) => item.id === zoneId);
@@ -90,7 +104,6 @@ export default function CustomerOrder() {
             }
         });
     }, [cashPaymentsEnabled, cardPaymentsEnabled, pickupEnabled, paymentMethod, fulfillmentMethod]);
-
 
     const available = Boolean(event?.orderingEnabled && venue?.active && zone?.active && zone?.deliveryEnabled);
     const assignedMenu = data.menus.find((menu) => menu.id === event?.menuId && menu.active);
