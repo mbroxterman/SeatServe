@@ -2,10 +2,12 @@ export type RunnerStatus = "offline" | "available" | "assigned" | "delivering" |
 export type OrderStatus = "new" | "preparing" | "ready" | "assigned" | "delivering" | "delivered" | "cancelled";
 export type FulfillmentMethod = "pickup" | "delivery-to-seat" | "delivery-to-zone";
 export type PaymentMethod = "cash" | "card";
+export type EventStatus = "draft" | "scheduled" | "live" | "completed";
 
 export interface VenueSection {
     id: string;
     name: string;
+    seatRange?: string;
 }
 
 export interface DeliveryZone {
@@ -45,6 +47,8 @@ export interface Runner {
     assignedAt?: string;
     estimatedAvailableAt?: string;
     availableSince?: string;
+    shiftStart?: string;
+    shiftEnd?: string;
 }
 
 export interface MenuCategory {
@@ -87,9 +91,11 @@ export interface SeatServeEvent {
     name: string;
     opponent?: string;
     startsAt: string;
+    orderingOpensAt?: string;
+    orderingClosesAt?: string;
     venueId: string;
     menuId?: string;
-    status: "draft" | "scheduled" | "live" | "completed";
+    status: EventStatus;
     orderingEnabled: boolean;
 }
 
@@ -98,7 +104,8 @@ export interface OrderItem {
     name: string;
     quantity: number;
     unitPrice: number;
-    selectedCondiments: string[];
+    condiments?: string[];
+    selectedCondiments?: string[];
 }
 
 export interface Order {
@@ -116,6 +123,7 @@ export interface Order {
         zoneId: string;
         vertical: string;
         horizontal: string;
+        notes?: string;
     };
     subtotal: number;
     deliveryFee: number;
@@ -167,11 +175,28 @@ export interface CustomerExperienceSettings {
     pickupLocationName: string;
     pickupInstructions: string;
     minimumOrderAmount?: number;
+
+    // Restored UI / Branding fields
+    headline?: string;
+    schoolMessage?: string;
+    message?: string;
+    ratingPrompt?: string;
+    commentsPrompt?: string;
+    supportTitle?: string;
+    finishLabel?: string;
+    mascotSymbol?: string;
+    primaryColor?: string;
+    secondaryColor?: string;
+    showRating?: boolean;
+    showComments?: boolean;
 }
 
 export interface StaffAccessSettings {
     passcodeEnabled: boolean;
     passcodeHash?: string;
+    adminPinHash?: string;
+    kitchenPinHash?: string;
+    runnerPinHash?: string;
 }
 
 export interface CustomerFeedback {
