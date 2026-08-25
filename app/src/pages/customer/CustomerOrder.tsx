@@ -19,12 +19,12 @@ import {
 } from "lucide-react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { useSeatServe } from "../../state/SeatServeContext";
-import { getActiveWorkspace, saveWorkspace } from "../../services/persistence";
+import { getActiveWorkspace, saveWorkspace, pushToGoogleSheets } from "../../services/persistence";
 import type { FulfillmentMethod, MenuItem, OrderItem, PaymentMethod } from "../../types/domain";
 import "./CustomerOrder.css";
 
 type Cart = Record<string, OrderItem>;
-type Step = "location" | "menu" | "cart" | "checkout" | "completed";
+type Step = "location" | "menu" | "cart" | "checkout";
 
 const stepOrder: Step[] = ["location", "menu", "cart", "checkout"];
 const money = (value: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
@@ -40,11 +40,11 @@ const categoryIcon = (category: string) => {
 
 export default function CustomerOrder() {
     const { eventId, venueId, zoneId } = useParams();
-    const navigate = useNavigate(); 
-    const { data, placeOrder } = useSeatServe();
-
+    const navigate = useNavigate();
+    const { data, placeOrder, getCurrentDataSnapshot } = useSeatServe();
 
     const [isSwitching, setIsSwitching] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -169,26 +169,51 @@ export default function CustomerOrder() {
         setCustomizing(null);
     };
 
-
-    const submit = () => {
+    const submit = async () => {
         setSubmitAttempted(true);
         if (!event || !venue || !zone || !vertical || !horizontal || !name.trim() || cartLines.length === 0 || !meetsMinimum) return;
         if (paymentMethod === "cash" && !cashPaymentsEnabled) return;
         if (paymentMethod === "card" && !cardPaymentsEnabled) return;
 
-        const orderId = placeOrder({
+        setIsSubmitting(true);
+
+        const payload = {
             eventId: event.id,
             fulfillmentMethod,
             items: cartLines.map(line => line.entry),
             customer: { name: name.trim(), mobile: mobile.trim() || undefined },
             location: { venueId: venue.id, zoneId: zone.id, vertical, horizontal },
             subtotal, tax, deliveryFee, total, paymentMethod, cashTotal, estimatedCardFee, cardTotal,
-        });
+        };
 
+        const orderId = placeOrder(payload);
         localStorage.removeItem(storageKey);
+
+        // Allow React 150ms to save the new order into its memory before we push
+        await new Promise(resolve => setTimeout(resolve, 150));
+
+        try {
+            const snapshot = getCurrentDataSnapshot();
+
+            // Safety net: If the snapshot somehow didn't catch the order yet, we append it directly
+            if (!snapshot.orders.some(o => o.id === orderId)) {
+                snapshot.orders.push({
+                    id: orderId,
+                    status: 'new',
+                    placedAt: new Date().toISOString(),
+                    ...payload
+                } as any);
+            }
+
+            // FORCE INSTANT PUSH TO CLOUD
+            await pushToGoogleSheets(snapshot, true);
+        } catch (error) {
+            console.error("Instant push failed, but order is saved locally.", error);
+        }
+
+        setIsSubmitting(false);
         navigate(`/order/track/${orderId}`);
     };
-
 
     if (isSwitching) {
         return (
@@ -266,7 +291,7 @@ export default function CustomerOrder() {
                         {cardPaymentsEnabled && <button type="button" className={paymentMethod === "card" ? "is-selected" : ""} onClick={() => setPaymentMethod("card")}><CreditCard size={22} /><span><strong>Pay by credit card at delivery</strong><small>Estimated card fee included. {fulfillmentMethod === "pickup" ? "The pickup window" : "Your runner"} will collect {money(cardTotal)} by card.</small></span><em>{money(cardTotal)}</em></button>}
                         {!cashPaymentsEnabled && !cardPaymentsEnabled && <div className="payment-methods__warning">Payment methods are currently disabled. Please contact SeatServe staff.</div>}</div><div className="demo-payment"><ShieldCheck size={21} /><div><strong>Payment collected {fulfillmentMethod === "pickup" ? "at pickup" : "at delivery"}</strong><span>No online card information is entered in SeatServe.</span></div></div>
                     {minOrderAmount > 0 && !meetsMinimum && <div className="customer-notice customer-notice--checkout">Your order is below the <strong>{money(minOrderAmount)}</strong> minimum.</div>}
-                    <OrderTotals subtotal={subtotal} deliveryFee={deliveryFee} tax={tax} cashTotal={cashTotal} estimatedCardFee={estimatedCardFee} cardTotal={cardTotal} /><button className="customer-primary" disabled={!name.trim() || cartLines.length === 0 || !meetsMinimum || (!cashPaymentsEnabled && !cardPaymentsEnabled)} onClick={submit}>Place order · {money(total)} <ArrowRight size={18} /></button><p className="checkout-trust"><Sparkles size={14} /> You can track the order immediately after checkout.</p></section>}
+                    <OrderTotals subtotal={subtotal} deliveryFee={deliveryFee} tax={tax} cashTotal={cashTotal} estimatedCardFee={estimatedCardFee} cardTotal={cardTotal} /><button className="customer-primary" disabled={!name.trim() || cartLines.length === 0 || !meetsMinimum || (!cashPaymentsEnabled && !cardPaymentsEnabled) || isSubmitting} onClick={submit}>{isSubmitting ? "Sending to Kitchen..." : `Place order · ${money(total)}`} <ArrowRight size={18} /></button><p className="checkout-trust"><Sparkles size={14} /> You can track the order immediately after checkout.</p></section>}
             </main>
 
             {customizing && <div className="customer-sheet-backdrop" onMouseDown={() => setCustomizing(null)}><section className="customer-sheet" onMouseDown={(event) => event.stopPropagation()}><div className="customer-sheet__handle" /><div className="customer-sheet__heading">{customizing.imageUrl && customizing.displayStyle !== "emoji" ? <img className="customer-sheet__image" src={customizing.imageUrl} alt={customizing.imageAlt || customizing.name} /> : <div className="customer-sheet__emoji">{customizing.emoji || categoryIcon(customizing.category)}</div>}<div><small>{customizing.category}</small><h2>{customizing.name}</h2><p>{customizing.description}</p></div><strong>{money(customizing.price)}</strong></div><div className="customer-sheet__quantity"><span>Quantity</span><div className="quantity-control"><button onClick={() => setCustomQuantity(Math.max(1, customQuantity - 1))}><Minus size={17} /></button><strong>{customQuantity}</strong><button onClick={() => setCustomQuantity(customQuantity + 1)}><Plus size={17} /></button></div></div>
