@@ -17,7 +17,7 @@ import {
     Smartphone,
     Sparkles,
 } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useNavigate } from "react-router-dom";
 import { useSeatServe } from "../../state/SeatServeContext";
 import { getActiveWorkspace, saveWorkspace } from "../../services/persistence";
 import type { FulfillmentMethod, MenuItem, OrderItem, PaymentMethod } from "../../types/domain";
@@ -40,7 +40,9 @@ const categoryIcon = (category: string) => {
 
 export default function CustomerOrder() {
     const { eventId, venueId, zoneId } = useParams();
+    const navigate = useNavigate(); 
     const { data, placeOrder } = useSeatServe();
+
 
     const [isSwitching, setIsSwitching] = useState(false);
 
@@ -173,7 +175,8 @@ export default function CustomerOrder() {
         if (!event || !venue || !zone || !vertical || !horizontal || !name.trim() || cartLines.length === 0 || !meetsMinimum) return;
         if (paymentMethod === "cash" && !cashPaymentsEnabled) return;
         if (paymentMethod === "card" && !cardPaymentsEnabled) return;
-        placeOrder({
+
+        const orderId = placeOrder({
             eventId: event.id,
             fulfillmentMethod,
             items: cartLines.map(line => line.entry),
@@ -181,9 +184,11 @@ export default function CustomerOrder() {
             location: { venueId: venue.id, zoneId: zone.id, vertical, horizontal },
             subtotal, tax, deliveryFee, total, paymentMethod, cashTotal, estimatedCardFee, cardTotal,
         });
+
         localStorage.removeItem(storageKey);
-        setStep("completed");
+        navigate(`/order/track/${orderId}`);
     };
+
 
     if (isSwitching) {
         return (
@@ -199,10 +204,6 @@ export default function CustomerOrder() {
 
     if (!event || !venue || !zone) return <CustomerMessage title="This QR code is not valid" message="Ask a SeatServe staff member for the correct zone QR code." />;
     if (!available) return <CustomerMessage title="Ordering is currently closed" message={`${event.name} ${event.opponent ? `vs ${event.opponent}` : ""} is not accepting delivery orders for ${zone.name} right now.`} />;
-
-    if (step === "completed") {
-        return <CustomerMessage title="Order Placed Successfully!" message="We have received your order. A runner will bring it to your location shortly. Please have your payment ready if required." />;
-    }
 
     return (
         <div className="customer-shell">
