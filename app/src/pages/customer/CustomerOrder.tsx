@@ -42,6 +42,8 @@ export default function CustomerOrder() {
     const { eventId, venueId, zoneId } = useParams();
     const { data, placeOrder } = useSeatServe();
 
+    const [isSwitching, setIsSwitching] = useState(false);
+
     // Workspace Auto-Switcher
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -49,10 +51,17 @@ export default function CustomerOrder() {
         if (workspaceName) {
             const active = getActiveWorkspace();
             if (active.name !== workspaceName) {
-                saveWorkspace({ ...active, name: workspaceName });
+                // Wrap state changes in a Promise resolve to avoid synchronous render warnings
+                Promise.resolve().then(() => {
+                    setIsSwitching(true);
+                    saveWorkspace({ ...active, name: workspaceName });
+                    // Give the app 2.5 seconds to download the new workspace data from Google Sheets
+                    setTimeout(() => setIsSwitching(false), 2500);
+                });
             }
         }
     }, []);
+
 
     const event = data.events.find((item) => item.id === eventId);
     const venue = data.venues.find((item) => item.id === venueId);
@@ -92,7 +101,6 @@ export default function CustomerOrder() {
     }, [step]);
 
     useEffect(() => {
-        // This safely corrects the selected method on a micro-delay if admin settings change
         Promise.resolve().then(() => {
             if (paymentMethod === "card" && !cardPaymentsEnabled && cashPaymentsEnabled) {
                 setPaymentMethod("cash");
@@ -180,6 +188,18 @@ export default function CustomerOrder() {
         localStorage.removeItem(storageKey);
         setStep("completed");
     };
+
+    if (isSwitching) {
+        return (
+            <main className="customer-shell" style={{ display: "grid", placeItems: "center", minHeight: "100vh", textAlign: "center" }}>
+                <div style={{ padding: "40px" }}>
+                    <img src="/seatserve-web-logo.png" alt="SeatServe" style={{ width: "200px", marginBottom: "20px" }} />
+                    <h2 style={{ color: "#071a3d" }}>Connecting to location...</h2>
+                    <p style={{ color: "#64748b" }}>Please wait while we sync the live menu.</p>
+                </div>
+            </main>
+        );
+    }
 
     if (!event || !venue || !zone) return <CustomerMessage title="This QR code is not valid" message="Ask a SeatServe staff member for the correct zone QR code." />;
     if (!available) return <CustomerMessage title="Ordering is currently closed" message={`${event.name} ${event.opponent ? `vs ${event.opponent}` : ""} is not accepting delivery orders for ${zone.name} right now.`} />;
