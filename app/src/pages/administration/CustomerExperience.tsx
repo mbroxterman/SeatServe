@@ -3,7 +3,6 @@ import QRCode from "qrcode";
 import { useEffect, useMemo, useState } from "react";
 import { useSeatServe } from "../../state/SeatServeContext";
 import { getActiveWorkspace } from "../../services/persistence";
-import type { CustomerExperienceSettings } from "../../types/domain";
 import "./CustomerExperience.css";
 
 type QrEntry = { id: string; kind: "staff" | "zone"; title: string; subtitle: string; url: string; filename: string; venueName?: string };
@@ -59,8 +58,7 @@ async function renderLetterPage(entry: QrEntry, qrImage: string, origin: string)
 }
 
 export default function CustomerExperience() {
-    const { data, activeEvent, updateCustomerExperience } = useSeatServe();
-    const [experience, setExperience] = useState<CustomerExperienceSettings>(data.customerExperience);
+    const { data, activeEvent } = useSeatServe();
     const [qrImages, setQrImages] = useState<Record<string, string>>({});
     const origin = window.location.origin;
     const activeWsName = getActiveWorkspace().name;
@@ -83,59 +81,15 @@ export default function CustomerExperience() {
     };
     const exportPdf = async (selected: QrEntry[]) => { const printable = selected.filter(e => qrImages[e.id]); if (!printable.length) return; const pages = []; for (const e of printable) pages.push(await renderLetterPage(e, qrImages[e.id], origin)); const blob = pdfFromJpegs(pages); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = printable.length === 1 ? printable[0].filename.replace(/\.png$/i, ".pdf") : "seatserve-qr-signs.pdf"; a.click(); URL.revokeObjectURL(url); };
     const staffEntry = entries[0], zoneEntries = entries.slice(1); const byVenue = data.venues.filter(v => v.active).map(venue => ({ venue, entries: zoneEntries.filter(e => e.venueName === venue.name) })).filter(g => g.entries.length);
+
     return <section className="customer-experience-page">
         <div className="customer-experience-heading">
             <div>
-                <p className="eyebrow">Customer Experience</p>
-                <h2>Financials &amp; Settings</h2>
-                <p>Control delivery fees, tax rates, payment methods, and customer-facing QR codes.</p>
-            </div>
-            <div className="customer-experience-heading__actions">
-                <button className="primary-button is-button" onClick={() => updateCustomerExperience(experience)}>Save Settings</button>
+                <p className="eyebrow">QR Generator</p>
+                <h2>Workspace QR Codes</h2>
+                <p>Print or download scannable signs for your active venues, zones, and staff portals.</p>
             </div>
         </div>
-
-        <section className="customer-experience-panel">
-            <div className="customer-experience-panel__heading">
-                <div>
-                    <p className="eyebrow">Checkout settings</p>
-                    <h3>Financials</h3>
-                </div>
-            </div>
-            <div className="experience-form-grid">
-                <label>
-                    Minimum order amount ($)
-                    <input type="number" min="0" step="0.01" value={experience.minimumOrderAmount ?? 0} onChange={(event) => setExperience({ ...experience, minimumOrderAmount: Number(event.target.value) })} />
-                </label>
-                <label>
-                    Delivery fee ($)
-                    <input type="number" min="0" step="0.01" value={experience.deliveryFee} onChange={(event) => setExperience({ ...experience, deliveryFee: Number(event.target.value) })} />
-                </label>
-                <label>
-                    Tax rate (%)
-                    <input type="number" min="0" step="0.001" value={experience.taxRatePercent} onChange={(event) => setExperience({ ...experience, taxRatePercent: Number(event.target.value) })} />
-                </label>
-                <label>
-                    Estimated card fee (%)
-                    <input type="number" min="0" step="0.01" value={experience.estimatedCardFeePercent} onChange={(event) => setExperience({ ...experience, estimatedCardFeePercent: Number(event.target.value) })} />
-                </label>
-                <label>
-                    Estimated fixed card fee ($)
-                    <input type="number" min="0" step="0.01" value={experience.estimatedCardFeeFixed} onChange={(event) => setExperience({ ...experience, estimatedCardFeeFixed: Number(event.target.value) })} />
-                </label>
-            </div>
-            <div className="experience-form-group">
-                <strong>Accepted payment methods</strong>
-                <label className="experience-check">
-                    <input type="checkbox" checked={experience.cashPaymentsEnabled} onChange={(event) => setExperience({ ...experience, cashPaymentsEnabled: event.target.checked })} />
-                    Enable exact cash collection on delivery
-                </label>
-                <label className="experience-check">
-                    <input type="checkbox" checked={experience.cardPaymentsEnabled} onChange={(event) => setExperience({ ...experience, cardPaymentsEnabled: event.target.checked })} />
-                    Enable credit card payments via Stripe Terminal
-                </label>
-            </div>
-        </section>
 
         <section className="customer-experience-summary"><div className="customer-experience-icon"><ShoppingBag size={24} /></div><div><span>Current live event</span><h3>{activeEvent ? `${activeEvent.name} vs ${activeEvent.opponent}` : "No live event"}</h3><p>{activeVenue?.name ?? "QR signs remain reusable across events"} · Ordering {activeEvent?.orderingEnabled ? "open" : "closed"}</p></div></section>
         <section className="customer-experience-panel qr-staff-panel"><div className="customer-experience-panel__heading"><div><p className="eyebrow">Staff QR</p><h3>Single staff entry sign</h3></div><span><ShieldCheck size={15} /> PIN protected</span></div><QrCard entry={staffEntry} image={qrImages[staffEntry.id]} onPrint={() => printEntries([staffEntry])} onPdf={() => exportPdf([staffEntry])} /></section>
