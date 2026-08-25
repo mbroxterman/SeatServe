@@ -44,24 +44,20 @@ export default function CustomerOrder() {
 
     const [isSwitching, setIsSwitching] = useState(false);
 
-    // Workspace Auto-Switcher
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const workspaceName = params.get("w");
         if (workspaceName) {
             const active = getActiveWorkspace();
             if (active.name !== workspaceName) {
-                // Wrap state changes in a Promise resolve to avoid synchronous render warnings
                 Promise.resolve().then(() => {
                     setIsSwitching(true);
                     saveWorkspace({ ...active, name: workspaceName });
-                    // Give the app 2.5 seconds to download the new workspace data from Google Sheets
                     setTimeout(() => setIsSwitching(false), 2500);
                 });
             }
         }
     }, []);
-
 
     const event = data.events.find((item) => item.id === eventId);
     const venue = data.venues.find((item) => item.id === venueId);
@@ -240,7 +236,7 @@ export default function CustomerOrder() {
                                     const hasCondiments = Boolean(item.condiments?.length);
                                     return <article className={`compact-menu-row ${!item.available ? "is-sold-out" : ""}`} key={item.id}>
                                         <div className="compact-menu-row__visual">{item.imageUrl && item.displayStyle !== "emoji" ? <img src={item.imageUrl} alt={item.imageAlt || item.name} /> : <span>{item.emoji || visibleCategories.find((entry) => entry.name === item.category)?.emoji || categoryIcon(item.category)}</span>}</div>
-                                        <div className="compact-menu-row__copy"><div><strong>{item.name}</strong>{!item.available && <em>Sold out</em>}</div><p>{item.description || "Fresh from the concession stand."}</p>{cartEntry?.selectedCondiments.length ? <small>Condiments: {cartEntry.selectedCondiments.join(", ")}</small> : null}</div>
+                                        <div className="compact-menu-row__copy"><div><strong>{item.name}</strong>{!item.available && <em>Sold out</em>}</div><p>{item.description || "Fresh from the concession stand."}</p>{(cartEntry?.selectedCondiments || []).length ? <small>Condiments: {(cartEntry?.selectedCondiments || []).join(", ")}</small> : null}</div>
                                         <strong className="compact-menu-row__price">{money(item.price)}</strong>
                                         {item.available && (hasCondiments ? <button className="compact-customize" onClick={() => openCustomizer(item)}>{quantity ? `Edit · ${quantity}` : "Customize"}</button> : <div className="quantity-control"><button aria-label={`Remove one ${item.name}`} onClick={() => changeQuantity(item, -1)}><Minus size={16} /></button><strong>{quantity}</strong><button aria-label={`Add one ${item.name}`} onClick={() => changeQuantity(item, 1)}><Plus size={16} /></button></div>)}
                                     </article>;
@@ -254,8 +250,8 @@ export default function CustomerOrder() {
 
                 {step === "cart" && <section className="customer-panel"><button className="customer-back" onClick={() => setStep("menu")}><ChevronLeft size={18} /> Menu</button><h2>Review your order</h2><p className="customer-help">Your cart is saved on this device while you finish ordering.</p>
                     {cartLines.length > 0 ? <div className="cart-list">{cartLines.map(({ item, entry }) => {
-                        const key = `${entry.menuItemId}-${entry.selectedCondiments.sort().join("-")}`;
-                        return <div className="cart-line" key={key}><div className="cart-line__icon">{item.imageUrl && item.displayStyle !== "emoji" ? <img src={item.imageUrl} alt="" /> : item.emoji || visibleCategories.find((e) => e.name === item.category)?.emoji || categoryIcon(item.category)}</div><div><strong>{item.name}</strong><small>{money(item.price)} each</small>{entry.selectedCondiments.length > 0 && <small>Condiments: {entry.selectedCondiments.join(", ")}</small>}</div><div className="quantity-control"><button onClick={() => changeQuantity(item, -1, entry.selectedCondiments)}><Minus size={15} /></button><strong>{entry.quantity}</strong><button onClick={() => changeQuantity(item, 1, entry.selectedCondiments)}><Plus size={15} /></button></div><strong>{money(item.price * entry.quantity)}</strong></div>
+                        const key = `${entry.menuItemId}-${(entry.selectedCondiments || []).sort().join("-")}`;
+                        return <div className="cart-line" key={key}><div className="cart-line__icon">{item.imageUrl && item.displayStyle !== "emoji" ? <img src={item.imageUrl} alt="" /> : item.emoji || visibleCategories.find((e) => e.name === item.category)?.emoji || categoryIcon(item.category)}</div><div><strong>{item.name}</strong><small>{money(item.price)} each</small>{(entry.selectedCondiments || []).length > 0 && <small>Condiments: {(entry.selectedCondiments || []).join(", ")}</small>}</div><div className="quantity-control"><button onClick={() => changeQuantity(item, -1, entry.selectedCondiments || [])}><Minus size={15} /></button><strong>{entry.quantity}</strong><button onClick={() => changeQuantity(item, 1, entry.selectedCondiments || [])}><Plus size={15} /></button></div><strong>{money(item.price * entry.quantity)}</strong></div>
                     })}</div> : <div className="customer-empty"><ShoppingBag size={22} /><strong>Your cart is empty</strong></div>}
                     {minOrderAmount > 0 && !meetsMinimum && subtotal > 0 && <div className="customer-notice">Add <strong>{money(minOrderAmount - subtotal)}</strong> more to reach the <strong>{money(minOrderAmount)}</strong> minimum order.</div>}
                     <OrderTotals subtotal={subtotal} deliveryFee={deliveryFee} tax={tax} cashTotal={cashTotal} estimatedCardFee={estimatedCardFee} cardTotal={cardTotal} /><button className="customer-primary" disabled={cartLines.length === 0 || !meetsMinimum} onClick={() => setStep("checkout")}>Continue to checkout <ArrowRight size={18} /></button></section>}
@@ -273,7 +269,7 @@ export default function CustomerOrder() {
             </main>
 
             {customizing && <div className="customer-sheet-backdrop" onMouseDown={() => setCustomizing(null)}><section className="customer-sheet" onMouseDown={(event) => event.stopPropagation()}><div className="customer-sheet__handle" /><div className="customer-sheet__heading">{customizing.imageUrl && customizing.displayStyle !== "emoji" ? <img className="customer-sheet__image" src={customizing.imageUrl} alt={customizing.imageAlt || customizing.name} /> : <div className="customer-sheet__emoji">{customizing.emoji || categoryIcon(customizing.category)}</div>}<div><small>{customizing.category}</small><h2>{customizing.name}</h2><p>{customizing.description}</p></div><strong>{money(customizing.price)}</strong></div><div className="customer-sheet__quantity"><span>Quantity</span><div className="quantity-control"><button onClick={() => setCustomQuantity(Math.max(1, customQuantity - 1))}><Minus size={17} /></button><strong>{customQuantity}</strong><button onClick={() => setCustomQuantity(customQuantity + 1)}><Plus size={17} /></button></div></div>
-                {customizing.condiments.length > 0 && <fieldset><legend>Condiments <small>Choose any</small></legend><div className="condiment-grid">{(customizing.condiments ?? []).map((condiment) => <label key={condiment}><input type="checkbox" checked={selectedCondiments.includes(condiment)} onChange={() => setSelectedCondiments((current) => current.includes(condiment) ? current.filter((value) => value !== condiment) : [...current, condiment])} /><span>{condiment}</span></label>)}</div></fieldset>}
+                {(customizing.condiments || []).length > 0 && <fieldset><legend>Condiments <small>Choose any</small></legend><div className="condiment-grid">{(customizing.condiments ?? []).map((condiment) => <label key={condiment}><input type="checkbox" checked={selectedCondiments.includes(condiment)} onChange={() => setSelectedCondiments((current) => current.includes(condiment) ? current.filter((value) => value !== condiment) : [...current, condiment])} /><span>{condiment}</span></label>)}</div></fieldset>}
                 <button className="customer-primary" onClick={saveCustomization}>Add to cart · {money(customizing.price * customQuantity)}</button></section></div>}
         </div>
     );

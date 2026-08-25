@@ -18,8 +18,12 @@ export default function EventManager() {
   const [editing, setEditing] = useState<SeatServeEvent>();
   const [formOpen, setFormOpen] = useState(false);
   const firstVenue = data.venues[0];
-  const defaultStart = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  defaultStart.setMinutes(0, 0, 0);
+    const [defaultStart] = useState(() => {
+        const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        d.setMinutes(0, 0, 0);
+        return d;
+    });
+
 
   const emptyDraft = (): EventDraft => ({
     name: "", opponent: "", venueId: firstVenue?.id ?? "", menuId: data.menus[0]?.id,
@@ -38,7 +42,7 @@ export default function EventManager() {
   const openEdit = (event: SeatServeEvent) => { setEditing(event); setDraft({ ...event }); setFormOpen(true); };
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    const clean = { ...draft, name: draft.name.trim(), opponent: draft.opponent.trim() };
+      const clean = { ...draft, name: draft.name.trim(), opponent: (draft.opponent || "").trim() };
     if (!clean.name || !clean.venueId) return;
     if (editing) updateEvent(editing.id, clean); else addEvent(clean);
     setFormOpen(false);
@@ -96,8 +100,10 @@ export default function EventManager() {
           <label>Venue<select required value={draft.venueId} onChange={(event) => setDraft({ ...draft, venueId: event.target.value })}>{data.venues.map((venue) => <option key={venue.id} value={venue.id}>{venue.name}</option>)}</select></label>
           <label>Menu<select value={draft.menuId ?? ""} onChange={(event) => setDraft({ ...draft, menuId: event.target.value || undefined })}><option value="">No menu</option>{data.menus.map((menu) => <option key={menu.id} value={menu.id}>{menu.name}</option>)}</select></label>
           <label>Starts<input type="datetime-local" value={toLocalInput(draft.startsAt)} onChange={(event) => setDraft({ ...draft, startsAt: fromLocalInput(event.target.value) })}/></label>
-          <label>Ordering opens<input type="datetime-local" value={toLocalInput(draft.orderingOpensAt)} onChange={(event) => setDraft({ ...draft, orderingOpensAt: fromLocalInput(event.target.value) })}/></label>
-          <label>Ordering closes<input type="datetime-local" value={toLocalInput(draft.orderingClosesAt)} onChange={(event) => setDraft({ ...draft, orderingClosesAt: fromLocalInput(event.target.value) })}/></label>
+          <label>Ordering opens<input type="datetime-local" value={toLocalInput(draft.orderingOpensAt || "")} onChange={(event) => setDraft({ ...draft, orderingOpensAt: fromLocalInput(event.target.value) })} /></label>
+          <label>Ordering closes<input type="datetime-local" value={toLocalInput(draft.orderingClosesAt || "")} onChange={(event) => setDraft({ ...draft, orderingClosesAt: fromLocalInput(event.target.value) })} /></label>
+
+
           <label className="menu-check"><input type="checkbox" checked={draft.orderingEnabled} onChange={(event) => setDraft({ ...draft, orderingEnabled: event.target.checked })}/> Customer ordering enabled</label>
         </div><div className="modal-footer"><button type="button" className="cancel-button" onClick={() => setFormOpen(false)}>Cancel</button><button className="primary-button" type="submit">Save event</button></div></form>
       </section>

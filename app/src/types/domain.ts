@@ -1,4 +1,4 @@
-export type RunnerStatus = "offline" | "available" | "assigned" | "delivering" | "returning";
+export type RunnerStatus = "offline" | "available" | "assigned" | "returning";
 export type OrderStatus = "new" | "preparing" | "ready" | "assigned" | "delivering" | "delivered" | "cancelled";
 export type FulfillmentMethod = "pickup" | "delivery-to-seat" | "delivery-to-zone";
 export type PaymentMethod = "cash" | "card";
@@ -8,6 +8,7 @@ export interface VenueSection {
     id: string;
     name: string;
     seatRange?: string;
+    active?: boolean;
 }
 
 export interface DeliveryZone {
@@ -69,7 +70,7 @@ export interface MenuItem {
     price: number;
     available: boolean;
     kind: "standard" | "quick-add";
-    condiments: string[];
+    condiments?: string[];
     emoji?: string;
     imageUrl?: string;
     imageAlt?: string;
@@ -111,8 +112,8 @@ export interface OrderItem {
 export interface Order {
     id: string;
     eventId: string;
-    fulfillmentMethod: FulfillmentMethod;
-    paymentMethod: PaymentMethod;
+    fulfillmentMethod?: FulfillmentMethod;
+    paymentMethod?: PaymentMethod;
     items: OrderItem[];
     customer: {
         name: string;
@@ -176,7 +177,6 @@ export interface CustomerExperienceSettings {
     pickupInstructions: string;
     minimumOrderAmount?: number;
 
-    // Restored UI / Branding fields
     headline?: string;
     schoolMessage?: string;
     message?: string;
@@ -192,7 +192,7 @@ export interface CustomerExperienceSettings {
 }
 
 export interface StaffAccessSettings {
-    passcodeEnabled: boolean;
+    passcodeEnabled?: boolean;
     passcodeHash?: string;
     adminPinHash?: string;
     kitchenPinHash?: string;
@@ -203,8 +203,8 @@ export interface CustomerFeedback {
     id: string;
     orderId: string;
     eventId: string;
-    rating: number;
-    comments: string;
+    rating?: number;
+    comments?: string;
     submittedAt: string;
 }
 
