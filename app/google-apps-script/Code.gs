@@ -56,7 +56,7 @@ function status_(requestedWorkspaceName) {
     updatedAt: getMeta_(metaSheet, 'updatedAt') || '',
     spreadsheetName: ss.getName(),
     structuredSync: true,
-    schemaVersion: 8
+    schemaVersion: 9
   });
 }
 
@@ -86,11 +86,11 @@ function save_(request) {
   setMeta_(metaSheet, 'workspaceName', workspaceName);
   setMeta_(metaSheet, 'updatedAt', updatedAt);
   setMeta_(metaSheet, 'clientUpdatedAt', request.clientUpdatedAt || updatedAt);
-  setMeta_(metaSheet, 'schemaVersion', '8');
+  setMeta_(metaSheet, 'schemaVersion', '9');
   setMeta_(metaSheet, 'lastWriteSource', 'SeatServe app');
   SpreadsheetApp.flush();
 
-  return json_({ ok: true, updatedAt: updatedAt, workspaceName: workspaceName, structuredSync: true, schemaVersion: 8, menuItemCount: (data.menuItems || []).length });
+  return json_({ ok: true, updatedAt: updatedAt, workspaceName: workspaceName, structuredSync: true, schemaVersion: 9, menuItemCount: (data.menuItems || []).length });
 }
 
 function load_() {
@@ -116,7 +116,7 @@ function load_() {
     workspaceName: getMeta_(metaSheet, 'workspaceName') || ss.getName(),
     source: source,
     structuredSync: true,
-    schemaVersion: 8
+    schemaVersion: 9
   });
 }
 
@@ -143,8 +143,8 @@ function writeStructuredData_(ss, data) {
   writeTable_(ss, 'Zones', ['venueId','id','name','description','deliveryEnabled','active','baselineRoundTripMinutes','learnedRoundTripMinutes','completedTripCount'], zones);
   writeTable_(ss, 'Venue Sections', ['venueId','zoneId','id','name','seatRange','active'], sections);
 
-  writeTable_(ss, 'Menu Categories', ['id','name','emoji','imageUrl','visible','sortOrder'], (data.menuCategories || []).map(function(x) {
-    return [x.id,x.name,x.emoji || '',storeLargeCell_(assetRows, 'menu-category:' + x.id + ':imageUrl', x.imageUrl || ''),boolean_(x.visible),number_(x.sortOrder)];
+  writeTable_(ss, 'Menu Categories', ['id','name','imageUrl','visible','sortOrder'], (data.menuCategories || []).map(function(x) {
+    return [x.id,x.name,storeLargeCell_(assetRows, 'menu-category:' + x.id + ':imageUrl', x.imageUrl || ''),boolean_(x.visible),number_(x.sortOrder)];
   }));
 
   writeTable_(ss, 'Menu Items', ['id','name','category','categoryId','description','price','available','kind','condiments','emoji','imageUrl','imageAlt','displayStyle','displayOrder'], (data.menuItems || []).map(function(x, index) {
@@ -155,8 +155,8 @@ function writeStructuredData_(ss, data) {
     return [x.id,x.name,x.description || '',boolean_(x.active),(x.itemIds || []).join(', '),JSON.stringify(x.priceOverrides || {}),(x.hiddenItemIds || []).join(', ')];
   }));
 
-  writeTable_(ss, 'Runners', ['id','name','email','phone','role','status','active','venueId','zoneIds','shiftStart','shiftEnd','completedDeliveries','rating','activeOrderId','availableSince','assignedAt','estimatedAvailableAt'], (data.runners || []).map(function(x) {
-    return [x.id,x.name,x.email || '',x.phone || '',x.role,x.status,boolean_(x.active),x.venueId || '',(x.zoneIds || []).join(', '),x.shiftStart || '',x.shiftEnd || '',number_(x.completedDeliveries),number_(x.rating),x.activeOrderId || '',x.availableSince || '',x.assignedAt || '',x.estimatedAvailableAt || ''];
+  writeTable_(ss, 'Runners', ['id','name','email','phone','role','status','active','venueId','zoneIds','completedDeliveries','rating','activeOrderId','availableSince','assignedAt','estimatedAvailableAt'], (data.runners || []).map(function(x) {
+    return [x.id,x.name,x.email || '',x.phone || '',x.role,x.status,boolean_(x.active),x.venueId || '',(x.zoneIds || []).join(', '),number_(x.completedDeliveries),number_(x.rating),x.activeOrderId || '',x.availableSince || '',x.assignedAt || '',x.estimatedAvailableAt || ''];
   }));
 
   writeTable_(ss, 'Orders', [
@@ -241,7 +241,7 @@ function readStructuredData_(ss) {
   });
 
   const menuCategories = rowsAsObjects_(ss, 'Menu Categories').filter(hasId_).map(function(x) { return {
-    id:string_(x.id), name:string_(x.name), emoji:string_(x.emoji), imageUrl:optionalString_(restoreLargeCell_(assetMap, x.imageUrl)), visible:bool_(x.visible), sortOrder:number_(x.sortOrder)
+    id:string_(x.id), name:string_(x.name), imageUrl:optionalString_(restoreLargeCell_(assetMap, x.imageUrl)), visible:bool_(x.visible), sortOrder:number_(x.sortOrder)
   }; }).sort(function(a,b) { return a.sortOrder - b.sortOrder; });
 
   const menuItems = rowsAsObjects_(ss, 'Menu Items').filter(hasId_).map(function(x) { return {
@@ -253,7 +253,7 @@ function readStructuredData_(ss) {
   }; });
 
   const runners = rowsAsObjects_(ss, 'Runners').filter(hasId_).map(function(x) { return {
-    id:string_(x.id), name:string_(x.name), email:string_(x.email), phone:string_(x.phone), role:string_(x.role) || 'runner', status:string_(x.status) || 'offline', active:bool_(x.active), venueId:string_(x.venueId), zoneIds:splitList_(x.zoneIds), shiftStart:string_(x.shiftStart), shiftEnd:string_(x.shiftEnd), completedDeliveries:number_(x.completedDeliveries), rating:number_(x.rating), activeOrderId:optionalString_(x.activeOrderId), availableSince:optionalString_(x.availableSince), assignedAt:optionalString_(x.assignedAt), estimatedAvailableAt:optionalString_(x.estimatedAvailableAt)
+    id:string_(x.id), name:string_(x.name), email:string_(x.email), phone:string_(x.phone), role:string_(x.role) || 'runner', status:string_(x.status) || 'offline', active:bool_(x.active), venueId:string_(x.venueId), zoneIds:splitList_(x.zoneIds), completedDeliveries:number_(x.completedDeliveries), rating:number_(x.rating), activeOrderId:optionalString_(x.activeOrderId), availableSince:optionalString_(x.availableSince), assignedAt:optionalString_(x.assignedAt), estimatedAvailableAt:optionalString_(x.estimatedAvailableAt)
   }; });
 
   const orders = rowsAsObjects_(ss, 'Orders').filter(hasId_).map(function(x) { return {
@@ -340,7 +340,7 @@ function buildSnapshotRows_(data, updatedAt, workspaceName) {
   rows.push(['lastSyncAt', updatedAt]);
   rows.push(['lastSyncStatus', 'success']);
   rows.push(['lastSyncSource', 'SeatServe Netlify / app']);
-  rows.push(['appVersion', 'v2.1.6D']);
+  rows.push(['appVersion', 'v2.1.7']);
   rows.push(['workspaceName', workspaceName]);
   return rows;
 }

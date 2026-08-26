@@ -8,7 +8,7 @@ type MenuDraft = Omit<MenuItem, "id">;
 type CategoryDraft = Omit<MenuCategory, "id">;
 type MenuDefinitionDraft = Omit<MenuDefinition, "id">;
 
-const emptyCategory: CategoryDraft = { name: "", emoji: "🍽️", imageUrl: "", visible: true, sortOrder: 1 };
+const emptyCategory: CategoryDraft = { name: "", imageUrl: "", visible: true, sortOrder: 1 };
 const emptyDraft: MenuDraft = {
     name: "",
     category: "Entrées",
@@ -75,7 +75,7 @@ export default function MenuManager() {
     const beginAdd = () => {
         const first = categories[0];
         setEditing(null);
-        setDraft({ ...emptyDraft, category: first?.name ?? "Entrées", categoryId: first?.id ?? "", emoji: first?.emoji ?? "🍔" });
+        setDraft({ ...emptyDraft, category: first?.name ?? "Entrées", categoryId: first?.id ?? "" });
         setCondimentText("");
         setItemOpen(true);
     };
@@ -115,7 +115,7 @@ export default function MenuManager() {
     };
 
     const beginAddCategory = () => { setEditingCategory(null); setCategoryDraft({ ...emptyCategory, sortOrder: categories.length + 1 }); setCategoryOpen(true); };
-    const beginEditCategory = (category: MenuCategory) => { setEditingCategory(category); setCategoryDraft({ name: category.name, emoji: category.emoji, imageUrl: category.imageUrl ?? "", visible: category.visible, sortOrder: category.sortOrder }); setCategoryOpen(true); };
+    const beginEditCategory = (category: MenuCategory) => { setEditingCategory(category); setCategoryDraft({ name: category.name, imageUrl: category.imageUrl ?? "", visible: category.visible, sortOrder: category.sortOrder }); setCategoryOpen(true); };
 
     const submitItem = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -133,7 +133,7 @@ export default function MenuManager() {
             description: (draft.description || "").trim(),
             price: Number(draft.price) || 0,
             condiments,
-            emoji: (draft.emoji || "").trim() || category?.emoji || "🍽️",
+            emoji: (draft.emoji || "").trim() || "🍽️",
             imageAlt: (draft.imageAlt || "").trim() || (draft.name || "").trim(),
             imageUrl: (draft.imageUrl || "").trim()
         };
@@ -150,7 +150,7 @@ export default function MenuManager() {
 
     const submitCategory = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-        const clean = { ...categoryDraft, name: (categoryDraft.name || "").trim(), emoji: (categoryDraft.emoji || "").trim() || "🍽️", sortOrder: Math.max(1, Number(categoryDraft.sortOrder)) };
+        const clean = { ...categoryDraft, name: (categoryDraft.name || "").trim(), sortOrder: Math.max(1, Number(categoryDraft.sortOrder)) };
         if (!clean.name) return;
         if (editingCategory) updateMenuCategory(editingCategory.id, clean); else addMenuCategory(clean);
         setCategoryOpen(false);
@@ -158,7 +158,7 @@ export default function MenuManager() {
 
     const chooseCategory = (id: string) => {
         const category = categories.find((entry) => entry.id === id);
-        setDraft((current) => ({ ...current, categoryId: id, category: category?.name ?? current.category, emoji: current.emoji || category?.emoji || "🍽️" }));
+        setDraft((current) => ({ ...current, categoryId: id, category: category?.name ?? current.category }));
     };
 
     const dropCategory = (targetId: string) => {
@@ -240,7 +240,6 @@ export default function MenuManager() {
                             {categories.map((category) => (
                                 <article key={category.id} draggable onDragStart={() => setDraggedCategoryId(category.id)} onDragOver={(event) => event.preventDefault()} onDrop={() => dropCategory(category.id)} className={`${!category.visible ? "is-hidden " : ""}${draggedCategoryId === category.id ? "is-dragging" : ""}`}>
                                     <span className="drag-handle" title="Drag to reorder"><GripVertical size={18} /></span>
-                                    <div className="category-visual">{category.imageUrl ? <img src={category.imageUrl} alt="" /> : <span>{category.emoji}</span>}</div>
                                     <div><strong>{category.name}</strong><small>Order {category.sortOrder}</small></div>
                                     <span className="category-visibility">{category.visible ? <Eye size={15} /> : <EyeOff size={15} />}</span>
                                     <button onClick={() => beginEditCategory(category)} title="Edit category"><Pencil size={16} /></button>
@@ -259,14 +258,14 @@ export default function MenuManager() {
                         {groupedItems.map(([group, items]) => (
                             <section className="menu-group" key={group.id}>
                                 <header>
-                                    <div><span className="menu-group__emoji">{group.emoji}</span><span>{group.name}</span><small>{items.length} items - drag to reorder</small></div>
+                                    <div><span>{group.name}</span><small>{items.length} items - drag to reorder</small></div>
                                     <strong>{items.filter((item) => item.available).length} available</strong>
                                 </header>
                                 <div className="menu-group__rows">
                                     {items.map((item) => (
                                         <article className={`menu-row ${draggedItem?.id === item.id ? "is-dragging" : ""}`} draggable onDragStart={() => setDraggedItem({ id: item.id, categoryId: group.id })} onDragOver={(event) => event.preventDefault()} onDrop={() => dropItem(item.id, group.id)} key={item.id}>
                                             <span className="drag-handle" title="Drag to reorder"><GripVertical size={18} /></span>
-                                            <div className="menu-item-visual">{item.imageUrl && item.displayStyle !== "emoji" ? <img src={item.imageUrl} alt={item.imageAlt || item.name} /> : <span>{item.emoji || group.emoji}</span>}</div>
+                                            <div className="menu-item-visual">{item.imageUrl && item.displayStyle !== "emoji" ? <img src={item.imageUrl} alt={item.imageAlt || item.name} /> : <span>{item.emoji || "🍽️"}</span>}</div>
                                             <div className="menu-row__main">
                                                 <div><strong>{item.name}</strong><span className={item.available ? "menu-status is-active" : "menu-status"}>{item.available ? "Available" : "Sold out"}</span></div>
                                                 <p>{item.description || "No description"}</p>
@@ -359,9 +358,9 @@ export default function MenuManager() {
                                 <p>Select the reusable products that should appear for this menu.</p>
                                 {categories.map((category) => (
                                     <div key={category.id}>
-                                        <strong>{category.emoji} {category.name}</strong>
+                                        <strong>{category.name}</strong>
                                         {data.menuItems.filter((item) => item.categoryId === category.id || item.category === category.name).map((item) => (
-                                            <label key={item.id}><input type="checkbox" checked={menuDraft.itemIds.includes(item.id)} onChange={() => toggleMenuItem(item.id)} /><span>{item.emoji} {item.name}</span><span>${item.price.toFixed(2)}</span></label>
+                                            <label key={item.id}><input type="checkbox" checked={menuDraft.itemIds.includes(item.id)} onChange={() => toggleMenuItem(item.id)} /><span>{item.name}</span><span>${item.price.toFixed(2)}</span></label>
                                         ))}
                                     </div>
                                 ))}
@@ -388,7 +387,7 @@ export default function MenuManager() {
                         <form onSubmit={submitItem}>
                             <div className="menu-form-grid">
                                 <label>Item name<input required value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
-                                <label>Category<select required value={draft.categoryId} onChange={(event) => chooseCategory(event.target.value)}>{categories.map((category) => <option value={category.id} key={category.id}>{category.emoji} {category.name}</option>)}</select></label>
+                                <label>Category<select required value={draft.categoryId} onChange={(event) => chooseCategory(event.target.value)}>{categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label>
                             </div>
                             <label>Description<textarea value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label>
                             <div className="menu-form-grid menu-form-grid--single">
@@ -428,10 +427,7 @@ export default function MenuManager() {
                             <button onClick={() => setCategoryOpen(false)}><X /></button>
                         </div>
                         <form onSubmit={submitCategory}>
-                            <div className="menu-form-grid">
-                                <label>Category name<input required value={categoryDraft.name} onChange={(event) => setCategoryDraft({ ...categoryDraft, name: event.target.value })} placeholder="Entrées" /></label>
-                                <label>Emoji<input value={categoryDraft.emoji} onChange={(event) => setCategoryDraft({ ...categoryDraft, emoji: event.target.value })} placeholder="🍔" /></label>
-                            </div>
+                            <label>Category name<input required value={categoryDraft.name} onChange={(event) => setCategoryDraft({ ...categoryDraft, name: event.target.value })} placeholder="Entrées" /></label>
                             <label>Display order<input type="number" min="1" value={categoryDraft.sortOrder} onChange={(event) => setCategoryDraft({ ...categoryDraft, sortOrder: Number(event.target.value) })} /></label>
                             <label className="menu-check"><input type="checkbox" checked={categoryDraft.visible} onChange={(event) => setCategoryDraft({ ...categoryDraft, visible: event.target.checked })} /> Visible in Customer Ordering</label>
                             <div className="menu-modal__actions">

@@ -48,14 +48,11 @@ export interface Runner {
     assignedAt?: string;
     estimatedAvailableAt?: string;
     availableSince?: string;
-    shiftStart?: string;
-    shiftEnd?: string;
 }
 
 export interface MenuCategory {
     id: string;
     name: string;
-    emoji: string;
     imageUrl?: string;
     visible: boolean;
     sortOrder: number;

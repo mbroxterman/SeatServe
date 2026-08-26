@@ -119,15 +119,15 @@ export const seedData: SeatServeData = {
     },
   ],
   runners: [
-    { id: "runner-1", name: "Alex Carter", email: "alex@example.com", phone: "555-0101", role: "lead", status: "available", active: true, availableSince: at(17, 30), venueId: "venue-stadium", zoneIds: ["zone-home-west"], shiftStart: "17:30", shiftEnd: "22:00", completedDeliveries: 14, rating: 4.9 },
-    { id: "runner-2", name: "Jordan Lee", email: "jordan@example.com", phone: "555-0102", role: "runner", status: "available", active: true, availableSince: at(17, 30), venueId: "venue-stadium", zoneIds: ["zone-home-east"], shiftStart: "17:30", shiftEnd: "22:00", completedDeliveries: 9, rating: 4.8 },
-    { id: "runner-3", name: "Taylor Morgan", email: "taylor@example.com", phone: "555-0103", role: "runner", status: "offline", active: true, venueId: "venue-stadium", zoneIds: [], shiftStart: "18:00", shiftEnd: "22:30", completedDeliveries: 6, rating: 4.7 },
+    { id: "runner-1", name: "Alex Carter", email: "alex@example.com", phone: "555-0101", role: "lead", status: "available", active: true, availableSince: at(17, 30), venueId: "venue-stadium", zoneIds: ["zone-home-west"], completedDeliveries: 14, rating: 4.9 },
+    { id: "runner-2", name: "Jordan Lee", email: "jordan@example.com", phone: "555-0102", role: "runner", status: "available", active: true, availableSince: at(17, 30), venueId: "venue-stadium", zoneIds: ["zone-home-east"], completedDeliveries: 9, rating: 4.8 },
+    { id: "runner-3", name: "Taylor Morgan", email: "taylor@example.com", phone: "555-0103", role: "runner", status: "offline", active: true, venueId: "venue-stadium", zoneIds: [], completedDeliveries: 6, rating: 4.7 },
   ],
   menuCategories: [
-    { id: "cat-entrees", name: "Entrées", emoji: "🍔", visible: true, sortOrder: 1 },
-    { id: "cat-drinks", name: "Drinks", emoji: "🥤", visible: true, sortOrder: 2 },
-    { id: "cat-snacks", name: "Snacks", emoji: "🍿", visible: true, sortOrder: 3 },
-    { id: "cat-candy", name: "Candy", emoji: "🍬", visible: true, sortOrder: 4 },
+    { id: "cat-entrees", name: "Entrées", visible: true, sortOrder: 1 },
+    { id: "cat-drinks", name: "Drinks", visible: true, sortOrder: 2 },
+    { id: "cat-snacks", name: "Snacks", visible: true, sortOrder: 3 },
+    { id: "cat-candy", name: "Candy", visible: true, sortOrder: 4 },
   ],
   menus: [
     { id: "menu-varsity-football", name: "Varsity Football Menu", description: "Full Friday night concession menu", active: true, itemIds: ["menu-1", "menu-4", "menu-2", "menu-5", "menu-3", "menu-6", "menu-7", "menu-8", "menu-9"], priceOverrides: {}, hiddenItemIds: [] },

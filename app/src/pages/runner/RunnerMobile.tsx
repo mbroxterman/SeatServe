@@ -11,20 +11,51 @@ import {
   Navigation,
   PackageCheck,
   RefreshCcw,
+  RefreshCw,
   Smartphone,
   Radio,
   LocateFixed,
   UserRound,
   Users,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { useSeatServe } from "../../state/SeatServeContext";
 import type { Order, Runner } from "../../types/domain";
+import { getSyncMeta, pullFromGoogleSheets, type SyncMeta } from "../../services/persistence";
 import "./RunnerMobile.css";
 
 export default function RunnerMobile() {
   const { runnerId } = useParams();
-  const { data, activeEvent, updateOrderStatus, markOrderPaymentCollected, requestSeatBeacon, markCustomerLocated, markRunnerAvailable, setRunnerStatus } = useSeatServe();
+  const { data, replaceData, activeEvent, updateOrderStatus, markOrderPaymentCollected, requestSeatBeacon, markCustomerLocated, markRunnerAvailable, setRunnerStatus } = useSeatServe();
+  const [syncMeta, setSyncMeta] = useState<SyncMeta>(() => getSyncMeta());
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncNotice, setSyncNotice] = useState("");
+
+  useEffect(() => {
+    const metaHandler = (event: Event) => setSyncMeta((event as CustomEvent<SyncMeta>).detail ?? getSyncMeta());
+    window.addEventListener("seatserve:sync-meta", metaHandler);
+    return () => window.removeEventListener("seatserve:sync-meta", metaHandler);
+  }, []);
+
+  const loadLatest = async () => {
+    setIsSyncing(true);
+    setSyncNotice("");
+    try {
+      const result = await pullFromGoogleSheets(data);
+      if (result.data) {
+        replaceData(result.data, "Runner loaded latest cloud data");
+        setSyncNotice("Latest data loaded from Google Sheets.");
+      } else {
+        setSyncNotice("Runner data is already up to date.");
+      }
+    } catch (error) {
+      setSyncNotice(error instanceof Error ? `Load failed: ${error.message}` : "Load from Sheets failed.");
+    } finally {
+      setIsSyncing(false);
+      window.setTimeout(() => setSyncNotice(""), 5000);
+    }
+  };
 
   if (!runnerId) {
     return <RunnerSelection runners={data.runners.filter((runner) => runner.active)} activeEventName={activeEvent ? `${activeEvent.name} vs ${activeEvent.opponent}` : undefined} />;
@@ -60,8 +91,16 @@ export default function RunnerMobile() {
           <h1>Hi, {firstName(runner.name)}</h1>
           <p>{activeEvent ? `${activeEvent.name} vs ${activeEvent.opponent}` : "No active event is currently selected."}</p>
         </div>
-        <StatusPill runner={runner} />
+        <div className="runner-mobile__sync-tools">
+          <StatusPill runner={runner} />
+          <button type="button" className="runner-load-button" onClick={() => void loadLatest()} disabled={isSyncing}>
+            <RefreshCw size={16} className={isSyncing ? "is-syncing" : ""} />
+            {isSyncing ? "Loading..." : "Load from Sheets"}
+          </button>
+          <small>Last sync: {syncMeta.lastSuccessfulSyncAt ? new Date(syncMeta.lastSuccessfulSyncAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "never"}</small>
+        </div>
       </header>
+      {syncNotice && <div className={`runner-sync-notice${syncNotice.toLowerCase().includes("failed") ? " is-error" : ""}`}>{syncNotice}</div>}
 
       {currentOrder ? (
         <ActiveAssignment

@@ -121,8 +121,6 @@ export default function RunnerManager() {
             active: runner.active,
             venueId: runner.venueId,
             zoneIds: runner.zoneIds ?? [],
-            shiftStart: runner.shiftStart,
-            shiftEnd: runner.shiftEnd,
         };
         updateRunner(runnerId, updatedDraft);
         setNotice("Runner status has been reset to Available.");
@@ -188,7 +186,6 @@ export default function RunnerManager() {
                                 <div className="runner-card__details">
                                     <div><span>Email</span><strong>{runner.email || "Not provided"}</strong></div>
                                     <div><span>Phone</span><strong>{runner.phone || "Not provided"}</strong></div>
-                                    <div><span>Shift</span><strong>{runner.shiftStart}–{runner.shiftEnd}</strong></div>
                                     <div><span>Performance</span><strong>{runner.completedDeliveries} deliveries · {runner.rating.toFixed(1)} ★</strong></div>
                                 </div>
                                 <div className="runner-card__scope">
@@ -258,8 +255,6 @@ function RunnerDialog({ runner, venues, onClose, onSave }: { runner?: Runner; ve
     const [active, setActive] = useState(runner?.active ?? true);
     const [venueId, setVenueId] = useState(runner?.venueId ?? "");
     const [zoneIds, setZoneIds] = useState<string[]>(runner?.zoneIds ?? []);
-    const [shiftStart, setShiftStart] = useState(runner?.shiftStart ?? "17:30");
-    const [shiftEnd, setShiftEnd] = useState(runner?.shiftEnd ?? "22:00");
 
     const availableZones = useMemo(() => {
         if (!venueId) return [];
@@ -274,7 +269,7 @@ function RunnerDialog({ runner, venues, onClose, onSave }: { runner?: Runner; ve
     const submit = (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         if (!name.trim()) return;
-        onSave({ name: name.trim(), email: email.trim(), phone: phone.trim(), role, status: active ? status : "offline", active, venueId, zoneIds, shiftStart, shiftEnd });
+        onSave({ name: name.trim(), email: email.trim(), phone: phone.trim(), role, status: active ? status : "offline", active, venueId, zoneIds });
     };
 
     return (
@@ -290,8 +285,6 @@ function RunnerDialog({ runner, venues, onClose, onSave }: { runner?: Runner; ve
                     <label>Phone<input value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
                     <label>Role<select value={role} onChange={(event) => setRole(event.target.value as Runner["role"])}><option value="runner">Runner</option><option value="lead">Runner Lead</option></select></label>
                     <label>Current status<select value={status} disabled={!active} onChange={(event) => setStatus(event.target.value as RunnerStatus)}><option value="available">Available</option><option value="assigned">Assigned</option><option value="returning">Returning</option><option value="offline">Offline</option></select></label>
-                    <label>Shift starts<input type="time" value={shiftStart} onChange={(event) => setShiftStart(event.target.value)} /></label>
-                    <label>Shift ends<input type="time" value={shiftEnd} onChange={(event) => setShiftEnd(event.target.value)} /></label>
                     <label className="runner-form-grid__wide">Primary venue<select value={venueId} onChange={(event) => setVenueId(event.target.value)}><option value="">All venues</option>{venues.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
                 </div>
                 {availableZones.length > 0 && (

@@ -377,7 +377,7 @@ export async function pushToGoogleSheets(data: SeatServeData, force = false): Pr
             return result;
         }
         if (!result.ok) throw new Error(result.message ?? "Google Sheets sync failed.");
-        if (result.schemaVersion !== undefined && result.schemaVersion < 8) throw new Error("Google Apps Script is out of date. Replace Code.gs with the v2.1.6E version and redeploy a new web-app version.");
+        if (result.schemaVersion !== undefined && result.schemaVersion < 9) throw new Error("Google Apps Script is out of date. Replace Code.gs with the v2.1.7 version and redeploy a new web-app version.");
         if (result.menuItemCount !== undefined && result.menuItemCount !== data.menuItems.length) throw new Error(`Google Sheets saved ${result.menuItemCount} menu items, but SeatServe sent ${data.menuItems.length}. Please redeploy Code.gs and try Sync now again.`);
 
         const now = new Date().toISOString();

@@ -128,12 +128,18 @@ const migrateData = (candidate: SeatServeData): SeatServeData => {
                 completedTripCount: zone.completedTripCount ?? 0,
             })),
         })),
-        runners: runners.map((runner) => ({
-            ...runner,
-            zoneIds: Array.isArray(runner.zoneIds) ? runner.zoneIds : [],
-            availableSince: runner.availableSince ?? (runner.status === "available" ? new Date().toISOString() : undefined),
-        })),
-        menuCategories,
+        runners: runners.map((runner) => {
+            const { shiftStart: _shiftStart, shiftEnd: _shiftEnd, ...rest } = runner as Runner & { shiftStart?: string; shiftEnd?: string };
+            return {
+                ...rest,
+                zoneIds: Array.isArray(runner.zoneIds) ? runner.zoneIds : [],
+                availableSince: runner.availableSince ?? (runner.status === "available" ? new Date().toISOString() : undefined),
+            };
+        }),
+        menuCategories: menuCategories.map((category) => {
+            const { emoji: _emoji, ...rest } = category as MenuCategory & { emoji?: string };
+            return rest;
+        }),
         menus: menus.map((menu) => ({ ...menu, itemIds: Array.isArray(menu.itemIds) ? menu.itemIds : [] })),
         menuItems: menuItems.map((item) => ({ ...item, description: item.description ?? "", condiments: Array.isArray(item.condiments) ? item.condiments : [] })),
         customerExperience: {
@@ -198,6 +204,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
     const didMountRef = useRef(false);
     const replacingDataRef = useRef(false);
     const autoSyncTimerRef = useRef<number | undefined>(undefined);
+    const cloudPollInFlightRef = useRef(false);
     const channelRef = useRef<BroadcastChannel | null>(null);
     const instanceIdRef = useRef(crypto.randomUUID());
     const serializedDataRef = useRef("");
@@ -216,8 +223,8 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
     // --- SAFE SILENT AUTO-LOAD ---
     useEffect(() => {
         const performSilentLoad = async () => {
-            // Yield to the microtask queue to avoid synchronous setState warnings
             await Promise.resolve();
+            if (cloudPollInFlightRef.current || !navigator.onLine) return;
 
             const config = getSyncConfig();
             if (!config.connected || !config.endpointUrl) {
@@ -225,6 +232,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
                 return;
             }
 
+            cloudPollInFlightRef.current = true;
             try {
                 const result = await pollGoogleSheets(currentDataRef.current);
                 if (result.data) {
@@ -238,16 +246,31 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
             } catch (error) {
                 console.error("Background auto-load failed", error);
             } finally {
+                cloudPollInFlightRef.current = false;
                 setCloudBootstrapReady(true);
             }
         };
 
         void performSilentLoad();
         const onVisible = () => { if (document.visibilityState === "visible") void performSilentLoad(); };
+        const onFocus = () => void performSilentLoad();
+        const onOnline = () => void performSilentLoad();
         document.addEventListener("visibilitychange", onVisible);
+        window.addEventListener("focus", onFocus);
+        window.addEventListener("online", onOnline);
+
+        // Production devices continuously check for shared updates so Kitchen, Runner, and Admin
+        // stay aligned without requiring staff to remember to press Load from Sheets.
+        const intervalMs = isDeploymentManagedSync() ? 10_000 : 30_000;
+        const cloudPollTimer = window.setInterval(() => {
+            if (document.visibilityState === "visible") void performSilentLoad();
+        }, intervalMs);
 
         return () => {
+            window.clearInterval(cloudPollTimer);
             document.removeEventListener("visibilitychange", onVisible);
+            window.removeEventListener("focus", onFocus);
+            window.removeEventListener("online", onOnline);
         };
     }, [workspaceRevision]);
 

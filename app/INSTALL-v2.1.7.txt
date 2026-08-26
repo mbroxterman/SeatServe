@@ -1,0 +1,43 @@
+SeatServe v2.1.7
+=================
+
+WHAT CHANGED
+------------
+1. Menu category emojis removed from Administration and Customer Ordering.
+2. Runner shift start/end fields removed from Runner Management and the Google Sheets Runners tab.
+3. Runner Mobile now includes a manual "Load from Sheets" button with visible success/failure feedback.
+4. Cross-device synchronization improved:
+   - Production checks Google Sheets when SeatServe opens.
+   - Checks again when the browser/app returns to the foreground.
+   - Checks again when internet connectivity returns.
+   - While visible, Production checks for newer cloud data every 10 seconds.
+   - A cloud update is applied only when the device does not have unsynced local changes.
+   - Existing immediate cloud push behavior remains in place for local changes.
+5. Google Apps Script structured schema updated to v9.
+
+INSTALL
+-------
+1. Back up your current SeatServe folder.
+2. Copy/replace the v2.1.7 app files into your active SeatServe/app folder.
+3. From SeatServe/app run:
+      npm install
+      npm run build
+      npm run dev
+4. Replace the deployed Apps Script Code.gs with google-apps-script/Code.gs from v2.1.7.
+5. In Apps Script choose Deploy > Manage deployments > Edit > New version > Deploy.
+   Keep the same /exec URL when possible.
+6. Test Connection in SeatServe Settings. It should report Apps Script schema v9.
+7. Click Sync now from the main Admin device once so the structured Menu Categories and Runners tabs are rewritten without the retired emoji/shift fields.
+8. Push to GitHub. Netlify should deploy automatically.
+
+CROSS-DEVICE TEST
+-----------------
+- Change a menu item or runner status on Device A.
+- Wait for the sync to complete.
+- Keep Device B open and visible. It should refresh from the cloud within about 10 seconds.
+- Runner Mobile and Kitchen Operations both retain a Load from Sheets button for an immediate manual refresh.
+
+VALIDATION
+----------
+TypeScript validation passed with: npx tsc -b
+The full Vite bundle could not be completed in the build environment because the uploaded Windows node_modules does not include the Linux Rolldown native binding. Run npm install/npm run build on your Windows SeatServe machine for the final bundle check.
