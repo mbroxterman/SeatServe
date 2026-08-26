@@ -1,21 +1,13 @@
-import { useMemo, useState, type FormEvent } from "react";
+// FIX: Removed 'type FormEvent' from this import
+import { useEffect, useMemo, useState } from "react";
 import {
-    BadgeCheck,
-    CirclePlus,
-    Copy,
-    MapPin,
-    Pencil,
-    Search,
-    Star,
-    Trash2,
-    UserCheck,
-    UserRound,
-    Users,
-    X,
-    AlertTriangle, // Import AlertTriangle icon
+    BadgeCheck, CirclePlus, Copy, MapPin, Pencil, Search, Star, Trash2, UserCheck, UserRound, Users, X, AlertTriangle,
+    RefreshCw,
+    CheckCircle2,
 } from "lucide-react";
 import { useSeatServe } from "../../state/SeatServeContext";
 import type { Runner, RunnerStatus } from "../../types/domain";
+import { getSyncMeta, pullFromGoogleSheets, type SyncMeta } from "../../services/persistence";
 import "./RunnerManager.css";
 
 type RunnerDraft = Omit<Runner, "id" | "activeOrderId" | "completedDeliveries" | "rating">;
@@ -28,19 +20,65 @@ const statusLabel: Record<RunnerStatus, string> = {
     offline: "Offline",
 };
 
+function DashboardHeader({ title, onRefresh, syncMeta, isSyncing, children }: { title: string; onRefresh: () => void; syncMeta: SyncMeta; isSyncing: boolean; children: React.ReactNode }) {
+    const lastSync = syncMeta.lastSuccessfulSyncAt ? new Date(syncMeta.lastSuccessfulSyncAt).toLocaleString() : "never";
+    return (
+        <header className="dashboard-header">
+            <div className="dashboard-header__main">
+                <div>
+                    <p className="runner-eyebrow">Administration</p>
+                    <h1>{title}</h1>
+                    <p>Manage the delivery roster, availability, and live assignment status.</p>
+                </div>
+                {children}
+            </div>
+            <div className="dashboard-header__sync">
+                <button onClick={onRefresh} disabled={isSyncing}>
+                    <RefreshCw size={16} className={isSyncing ? "is-syncing" : ""} />
+                    {isSyncing ? "Loading..." : "Load from Sheets"}
+                </button>
+                <div className="sync-status">
+                    <CheckCircle2 size={16} />
+                    <span>Last updated: {lastSync}</span>
+                </div>
+            </div>
+        </header>
+    );
+}
+
 export default function RunnerManager() {
-    const {
-        data,
-        addRunner,
-        updateRunner,
-        duplicateRunner,
-        deleteRunner,
-        setRunnerStatus,
-    } = useSeatServe();
+    const { data, replaceData, addRunner, updateRunner, duplicateRunner, deleteRunner, setRunnerStatus } = useSeatServe();
     const [query, setQuery] = useState("");
     const [filter, setFilter] = useState<Filter>("all");
     const [editor, setEditor] = useState<Runner | null | undefined>(undefined);
     const [notice, setNotice] = useState("");
+    const [syncMeta, setSyncMeta] = useState<SyncMeta>(() => getSyncMeta());
+    const [isSyncing, setIsSyncing] = useState(false);
+
+    useEffect(() => {
+        const metaHandler = (event: Event) => setSyncMeta((event as CustomEvent<SyncMeta>).detail ?? getSyncMeta());
+        window.addEventListener("seatserve:sync-meta", metaHandler);
+        return () => window.removeEventListener("seatserve:sync-meta", metaHandler);
+    }, []);
+
+    const handleRefresh = async () => {
+        setIsSyncing(true);
+        setNotice("");
+        try {
+            const result = await pullFromGoogleSheets(data);
+            if (result.data) {
+                replaceData(result.data, "Manual refresh successful");
+                setNotice("Successfully loaded the latest data from Google Sheets.");
+            } else {
+                setNotice("Data is already up to date.");
+            }
+        } catch (error) {
+            setNotice(error instanceof Error ? `Error: ${error.message}` : "Failed to load data.");
+        } finally {
+            setIsSyncing(false);
+            setTimeout(() => setNotice(""), 5000);
+        }
+    };
 
     const filteredRunners = useMemo(() => {
         const normalized = query.trim().toLowerCase();
@@ -69,50 +107,34 @@ export default function RunnerManager() {
 
     const forceAvailable = (runnerId: string) => {
         if (!window.confirm("Force this runner to become available? This should only be used if the runner is stuck on a deleted or invalid order.")) return;
-
-        // 1. Find the full runner object from the data array.
         const runner = data.runners.find(r => r.id === runnerId);
         if (!runner) {
             setNotice("Could not find the runner to update.");
             return;
         }
-
-        // 2. Create a complete, valid RunnerDraft object using the runner's existing data.
-        // This ensures all properties required by RunnerDraft are present and correctly typed.
         const updatedDraft: RunnerDraft = {
             name: runner.name,
-            email: runner.email ?? "", // Use existing value or default to empty string
-            phone: runner.phone ?? "", // Use existing value or default to empty string
+            email: runner.email ?? "",
+            phone: runner.phone ?? "",
             role: runner.role,
-            status: 'available', // 3. This is the only change we are making
+            status: 'available',
             active: runner.active,
             venueId: runner.venueId,
             zoneIds: runner.zoneIds ?? [],
             shiftStart: runner.shiftStart,
             shiftEnd: runner.shiftEnd,
         };
-
-        // 4. Call updateRunner with the complete, valid draft. This will succeed.
-        // The logic within your `updateRunner` function should also handle clearing the `activeOrderId` when a runner's status is set to 'available'.
         updateRunner(runnerId, updatedDraft);
         setNotice("Runner status has been reset to Available.");
     };
 
-
-
-
     return (
         <section className="runner-page">
-            <header className="runner-page__header">
-                <div>
-                    <p className="runner-eyebrow">Administration</p>
-                    <h1>Runner Management</h1>
-                    <p>Manage the delivery roster, availability, and live assignment status.</p>
-                </div>
+            <DashboardHeader title="Runner Management" onRefresh={handleRefresh} syncMeta={syncMeta} isSyncing={isSyncing}>
                 <button className="runner-button runner-button--primary" type="button" onClick={() => setEditor(null)}>
                     <CirclePlus size={18} /> Add runner
                 </button>
-            </header>
+            </DashboardHeader>
             <div className="runner-summary" aria-label="Runner summary">
                 <SummaryCard icon={<Users size={21} />} label="Active roster" value={activeRunners} />
                 <SummaryCard icon={<UserCheck size={21} />} label="Available now" value={availableRunners} />
@@ -149,7 +171,6 @@ export default function RunnerManager() {
                     {filteredRunners.map((runner) => {
                         const venue = data.venues.find((candidate) => candidate.id === runner.venueId);
                         const isStuck = runner.activeOrderId && !data.orders.some(o => o.id === runner.activeOrderId);
-
                         return (
                             <article key={runner.id} className={`runner-card ${!runner.active ? "is-inactive" : ""} ${isStuck ? "is-stuck" : ""}`}>
                                 <div className="runner-card__top">
@@ -174,10 +195,9 @@ export default function RunnerManager() {
                                     <MapPin size={16} />
                                     <div>
                                         <strong>{venue?.name ?? "All venues"}</strong>
-                                        <span>Eligible for the next available assignment</span>
+                                        <span>{runner.zoneIds?.length ? `${runner.zoneIds.length} zones assigned` : 'Eligible for all zones'}</span>
                                     </div>
                                 </div>
-
                                 <div className="runner-card__status-controls" aria-label={`Set ${runner.name} availability`}>
                                     {isStuck ? (
                                         <div className="runner-card__system-status is-error">
@@ -199,7 +219,6 @@ export default function RunnerManager() {
                                         </button>
                                     ))}
                                 </div>
-
                                 <div className="runner-card__actions">
                                     <button type="button" onClick={() => setEditor(runner)}><Pencil size={16} /> Edit</button>
                                     <button type="button" onClick={() => duplicateRunner(runner.id)}><Copy size={16} /> Duplicate</button>
@@ -238,13 +257,24 @@ function RunnerDialog({ runner, venues, onClose, onSave }: { runner?: Runner; ve
     const [status, setStatus] = useState<RunnerStatus>(runner?.status ?? "offline");
     const [active, setActive] = useState(runner?.active ?? true);
     const [venueId, setVenueId] = useState(runner?.venueId ?? "");
+    const [zoneIds, setZoneIds] = useState<string[]>(runner?.zoneIds ?? []);
     const [shiftStart, setShiftStart] = useState(runner?.shiftStart ?? "17:30");
     const [shiftEnd, setShiftEnd] = useState(runner?.shiftEnd ?? "22:00");
 
-    const submit = (event: FormEvent) => {
+    const availableZones = useMemo(() => {
+        if (!venueId) return [];
+        return venues.find(v => v.id === venueId)?.zones.filter(z => z.active) ?? [];
+    }, [venueId, venues]);
+
+    const handleZoneToggle = (zoneId: string, checked: boolean) => {
+        setZoneIds(current => checked ? [...current, zoneId] : current.filter(id => id !== zoneId));
+    };
+
+    // FIX: Using React.FormEvent instead of deprecated FormEvent
+    const submit = (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         if (!name.trim()) return;
-        onSave({ name: name.trim(), email: email.trim(), phone: phone.trim(), role, status: active ? status : "offline", active, venueId, zoneIds: [], shiftStart, shiftEnd });
+        onSave({ name: name.trim(), email: email.trim(), phone: phone.trim(), role, status: active ? status : "offline", active, venueId, zoneIds, shiftStart, shiftEnd });
     };
 
     return (
@@ -264,6 +294,19 @@ function RunnerDialog({ runner, venues, onClose, onSave }: { runner?: Runner; ve
                     <label>Shift ends<input type="time" value={shiftEnd} onChange={(event) => setShiftEnd(event.target.value)} /></label>
                     <label className="runner-form-grid__wide">Primary venue<select value={venueId} onChange={(event) => setVenueId(event.target.value)}><option value="">All venues</option>{venues.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
                 </div>
+                {availableZones.length > 0 && (
+                    <fieldset className="runner-zone-assignments">
+                        <legend>Zone Assignments</legend>
+                        <div className="runner-zone-grid">
+                            {availableZones.map(zone => (
+                                <label key={zone.id}>
+                                    <input type="checkbox" checked={zoneIds.includes(zone.id)} onChange={(e) => handleZoneToggle(zone.id, e.target.checked)} />
+                                    {zone.name}
+                                </label>
+                            ))}
+                        </div>
+                    </fieldset>
+                )}
                 <label className="runner-active-check"><input type="checkbox" checked={active} onChange={(event) => setActive(event.target.checked)} /> Active roster member</label>
                 <div className="runner-dialog__actions">
                     <button type="button" className="runner-button" onClick={onClose}>Cancel</button>

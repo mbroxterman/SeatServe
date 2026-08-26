@@ -22,3 +22,115 @@
     cursor: pointer;
     margin-left: auto;
 }
+/* New Dashboard Header Styles */
+/* New Dashboard Header Styles */
+.dashboard-header, .ko-header {
+    background-color: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 24px 28px;
+}
+
+.dashboard-header__main, .ko-header__main {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+    .dashboard-header__main h1, .ko-header__main h1 {
+        margin: 0;
+    }
+
+.dashboard-header__sync, .ko-header__sync {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+    .dashboard-header__sync button, .ko-header__sync button {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background-color: #fff;
+        border: 1px solid #d1d5db;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+        .dashboard-header__sync button:disabled, .ko-header__sync button:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+    .dashboard-header__sync .is-syncing, .ko-header__sync .is-syncing {
+        animation: spin 1s linear infinite;
+    }
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.sync-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    color: #4b5563;
+}
+
+    .sync-status svg {
+        color: #16a34a; /* Green check */
+    }
+
+/* Notice for sync messages */
+.runner-notice, .ko-notice {
+    padding: 12px 20px;
+    background-color: #f0fdf4;
+    color: #166534;
+    border-bottom: 1px solid #d1fae5;
+    font-weight: 500;
+    font-size: 0.9rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+/* Styles for new Zone Assignment fieldset */
+.runner-zone-assignments {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 12px 16px 16px;
+    margin-top: 16px;
+}
+
+    .runner-zone-assignments legend {
+        font-weight: 600;
+        font-size: 0.9rem;
+        padding: 0 8px;
+    }
+
+.runner-zone-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+    margin-top: 8px;
+}
+
+    .runner-zone-grid label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.9rem;
+        background-color: #f9fafb;
+        padding: 8px 10px;
+        border-radius: 6px;
+    }
