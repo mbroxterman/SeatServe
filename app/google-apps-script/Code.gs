@@ -29,6 +29,7 @@ function doGet(e) {
     const action = (e && e.parameter && e.parameter.action) || 'load';
     if (action === 'status') return status_(e && e.parameter ? e.parameter.workspace : '');
     if (action === 'load') return load_();
+    if (action === 'live') return live_();
     return json_({ ok: false, message: 'Unsupported action.' });
   } catch (error) {
     return json_({ ok: false, message: errorMessage_(error) });
@@ -56,7 +57,25 @@ function status_(requestedWorkspaceName) {
     updatedAt: getMeta_(metaSheet, 'updatedAt') || '',
     spreadsheetName: ss.getName(),
     structuredSync: true,
-    schemaVersion: 9
+    schemaVersion: 10
+  });
+}
+
+function live_() {
+  const ss = getSpreadsheet_();
+  const metaSheet = getOrCreate_(ss, META_SHEET, ['key', 'value']);
+  const data = restoreActiveContacts_(readStructuredData_(ss));
+  return json_({
+    ok: true,
+    live: {
+      events: data.events || [],
+      orders: data.orders || [],
+      runners: data.runners || [],
+      feedback: data.feedback || []
+    },
+    updatedAt: getMeta_(metaSheet, 'updatedAt') || '',
+    workspaceName: getMeta_(metaSheet, 'workspaceName') || ss.getName(),
+    schemaVersion: 10
   });
 }
 
@@ -86,11 +105,11 @@ function save_(request) {
   setMeta_(metaSheet, 'workspaceName', workspaceName);
   setMeta_(metaSheet, 'updatedAt', updatedAt);
   setMeta_(metaSheet, 'clientUpdatedAt', request.clientUpdatedAt || updatedAt);
-  setMeta_(metaSheet, 'schemaVersion', '9');
+  setMeta_(metaSheet, 'schemaVersion', '10');
   setMeta_(metaSheet, 'lastWriteSource', 'SeatServe app');
   SpreadsheetApp.flush();
 
-  return json_({ ok: true, updatedAt: updatedAt, workspaceName: workspaceName, structuredSync: true, schemaVersion: 9, menuItemCount: (data.menuItems || []).length });
+  return json_({ ok: true, updatedAt: updatedAt, workspaceName: workspaceName, structuredSync: true, schemaVersion: 10, menuItemCount: (data.menuItems || []).length });
 }
 
 function load_() {
@@ -116,7 +135,7 @@ function load_() {
     workspaceName: getMeta_(metaSheet, 'workspaceName') || ss.getName(),
     source: source,
     structuredSync: true,
-    schemaVersion: 9
+    schemaVersion: 10
   });
 }
 
@@ -340,7 +359,7 @@ function buildSnapshotRows_(data, updatedAt, workspaceName) {
   rows.push(['lastSyncAt', updatedAt]);
   rows.push(['lastSyncStatus', 'success']);
   rows.push(['lastSyncSource', 'SeatServe Netlify / app']);
-  rows.push(['appVersion', 'v2.1.7']);
+  rows.push(['appVersion', 'v2.1.7B']);
   rows.push(['workspaceName', workspaceName]);
   return rows;
 }

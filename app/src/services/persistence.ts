@@ -47,6 +47,21 @@ export interface SyncMeta {
     lastAttemptMessage?: string;
 }
 
+
+export interface LiveRemoteEnvelope {
+  ok: boolean;
+  updatedAt?: string;
+  workspaceName?: string;
+  schemaVersion?: number;
+  message?: string;
+  live?: {
+    events?: SeatServeData["events"];
+    orders?: SeatServeData["orders"];
+    runners?: SeatServeData["runners"];
+    feedback?: SeatServeData["feedback"];
+  };
+}
+
 export interface RemoteEnvelope {
     ok: boolean;
     data?: SeatServeData;
@@ -377,7 +392,7 @@ export async function pushToGoogleSheets(data: SeatServeData, force = false): Pr
             return result;
         }
         if (!result.ok) throw new Error(result.message ?? "Google Sheets sync failed.");
-        if (result.schemaVersion !== undefined && result.schemaVersion < 9) throw new Error("Google Apps Script is out of date. Replace Code.gs with the v2.1.7 version and redeploy a new web-app version.");
+        if (result.schemaVersion !== undefined && result.schemaVersion < 10) throw new Error("Google Apps Script is out of date. Replace Code.gs with the v2.1.7B version and redeploy a new web-app version.");
         if (result.menuItemCount !== undefined && result.menuItemCount !== data.menuItems.length) throw new Error(`Google Sheets saved ${result.menuItemCount} menu items, but SeatServe sent ${data.menuItems.length}. Please redeploy Code.gs and try Sync now again.`);
 
         const now = new Date().toISOString();
@@ -387,6 +402,23 @@ export async function pushToGoogleSheets(data: SeatServeData, force = false): Pr
     } catch (error) {
         saveSyncMeta({ ...getSyncMeta(), pendingChanges: true });
         return failSyncAttempt(startedAt, "sync", error, response);
+    }
+}
+
+export async function pollLiveGoogleSheets(): Promise<LiveRemoteEnvelope> {
+    const config = requireEndpoint();
+    const meta = getSyncMeta();
+    // Never replace a just-made local operational action while it is still being pushed.
+    if (meta.pendingChanges) return { ok: true, message: "Waiting for local changes to sync." };
+    try {
+        const separator = config.endpointUrl.includes("?") ? "&" : "?";
+        const response = await fetch(`${config.endpointUrl.trim()}${separator}action=live&workspace=${encodeURIComponent(config.workspaceName)}&cacheBust=${Date.now()}`, { cache: "no-store" });
+        const text = await response.text();
+        const result = JSON.parse(text) as LiveRemoteEnvelope;
+        if (!response.ok || !result.ok) throw new Error(result.message ?? `Live sync failed (HTTP ${response.status}).`);
+        return result;
+    } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : "Live sync failed." };
     }
 }
 

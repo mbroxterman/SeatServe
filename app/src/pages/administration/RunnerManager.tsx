@@ -33,7 +33,7 @@ function DashboardHeader({ title, children }: { title: string; children: React.R
 }
 
 export default function RunnerManager() {
-    const { data, addRunner, updateRunner, duplicateRunner, deleteRunner, setRunnerStatus } = useSeatServe();
+    const { data, replaceData, addRunner, updateRunner, duplicateRunner, deleteRunner, setRunnerStatus } = useSeatServe();
     const [query, setQuery] = useState("");
     const [filter, setFilter] = useState<Filter>("all");
     const [editor, setEditor] = useState<Runner | null | undefined>(undefined);

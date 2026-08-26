@@ -1,0 +1,13 @@
+SeatServe v2.1.7B - Live Sync Stability
+
+1. Replace your current SeatServe project with this SeatServe folder.
+2. From SeatServe\app run: npm install, then npm run build.
+3. Replace Google Apps Script Code.gs with app\google-apps-script\Code.gs.
+4. Deploy Apps Script as a NEW VERSION of the existing web app deployment. Keep the same /exec URL.
+5. In SeatServe Settings, Test connection. Apps Script schema should report v10.
+6. Sync Now once from the main Admin laptop.
+7. Test Customer, Kitchen, and Runner on separate devices. Live operational data polls every ~3 seconds while visible.
+
+Live sync includes: orders, order status, runners, event ordering state, feedback, SeatBeacon request/open state.
+Full workspace configuration continues to refresh separately at a slower interval.
+Manual Load from Sheets remains available in Kitchen and Runner Mobile as an emergency fallback.

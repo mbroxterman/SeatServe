@@ -9,6 +9,7 @@ import {
     isDeploymentManagedSync,
     markLocalChange,
     pollGoogleSheets,
+    pollLiveGoogleSheets,
     pushToGoogleSheets
 } from "../services/persistence";
 import type {
@@ -220,6 +221,59 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
         }));
     };
 
+    // --- LIVE MULTI-DEVICE SYNC ---
+    // Orders, runner state, event ordering state, feedback, and SeatBeacon need to move
+    // between physical devices much faster than configuration data. This lightweight
+    // poll runs only while Production is visible and never overwrites unsynced local work.
+    useEffect(() => {
+        if (!isDeploymentManagedSync()) return;
+        let cancelled = false;
+        let inFlight = false;
+
+        const refreshLiveState = async () => {
+            if (cancelled || inFlight || !navigator.onLine || document.visibilityState !== "visible") return;
+            inFlight = true;
+            try {
+                const result = await pollLiveGoogleSheets();
+                if (!cancelled && result.ok && result.live) {
+                    const live = result.live;
+                    const current = currentDataRef.current;
+                    const next = migrateData({
+                        ...current,
+                        events: live.events ?? current.events,
+                        orders: live.orders ?? current.orders,
+                        runners: live.runners ?? current.runners,
+                        feedback: live.feedback ?? current.feedback,
+                    });
+                    if (JSON.stringify(next) !== serializedDataRef.current) {
+                        replacingDataRef.current = true;
+                        setData(next);
+                    }
+                }
+            } catch (error) {
+                console.error("Live multi-device refresh failed", error);
+            } finally {
+                inFlight = false;
+            }
+        };
+
+        void refreshLiveState();
+        const timer = window.setInterval(() => void refreshLiveState(), 3000);
+        const onVisible = () => { if (document.visibilityState === "visible") void refreshLiveState(); };
+        const onFocus = () => void refreshLiveState();
+        const onOnline = () => void refreshLiveState();
+        document.addEventListener("visibilitychange", onVisible);
+        window.addEventListener("focus", onFocus);
+        window.addEventListener("online", onOnline);
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
+            document.removeEventListener("visibilitychange", onVisible);
+            window.removeEventListener("focus", onFocus);
+            window.removeEventListener("online", onOnline);
+        };
+    }, [workspaceRevision]);
+
     // --- SAFE SILENT AUTO-LOAD ---
     useEffect(() => {
         const performSilentLoad = async () => {
@@ -261,7 +315,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
 
         // Production devices continuously check for shared updates so Kitchen, Runner, and Admin
         // stay aligned without requiring staff to remember to press Load from Sheets.
-        const intervalMs = isDeploymentManagedSync() ? 10_000 : 30_000;
+        const intervalMs = isDeploymentManagedSync() ? 30_000 : 30_000;
         const cloudPollTimer = window.setInterval(() => {
             if (document.visibilityState === "visible") void performSilentLoad();
         }, intervalMs);
