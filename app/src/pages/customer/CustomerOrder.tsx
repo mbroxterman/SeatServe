@@ -16,11 +16,12 @@ import {
     ShoppingBag,
     Smartphone,
     Sparkles,
+    Trash2,
 } from "lucide-react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { useSeatServe } from "../../state/SeatServeContext";
 import { getActiveWorkspace, saveWorkspace, pushToGoogleSheets } from "../../services/persistence";
-import type { FulfillmentMethod, MenuItem, OrderItem, PaymentMethod } from "../../types/domain";
+import type { FulfillmentMethod, MenuItem, OrderItem, PaymentMethod, Order } from "../../types/domain";
 import "./CustomerOrder.css";
 
 type Cart = Record<string, OrderItem>;
@@ -42,7 +43,6 @@ export default function CustomerOrder() {
     const { eventId, venueId, zoneId } = useParams();
     const navigate = useNavigate();
     const { data, placeOrder, getCurrentDataSnapshot } = useSeatServe();
-
     const [isSwitching, setIsSwitching] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -85,7 +85,6 @@ export default function CustomerOrder() {
     const [name, setName] = useState("");
     const [mobile, setMobile] = useState("");
     const [submitAttempted, setSubmitAttempted] = useState(false);
-
     const { cashPaymentsEnabled, cardPaymentsEnabled, pickupEnabled } = data.customerExperience;
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(cardPaymentsEnabled ? "card" : "cash");
     const [fulfillmentMethod, setFulfillmentMethod] = useState<FulfillmentMethod>("delivery-to-seat");
@@ -158,6 +157,7 @@ export default function CustomerOrder() {
         setCustomQuantity(existingEntry?.quantity ?? 1);
         setSelectedCondiments(existingEntry?.selectedCondiments ?? []);
     };
+
     const saveCustomization = () => {
         if (!customizing) return;
         const key = `${customizing.id}-${selectedCondiments.sort().join("-")}`;
@@ -169,12 +169,18 @@ export default function CustomerOrder() {
         setCustomizing(null);
     };
 
+    const cancelOrder = () => {
+        if (window.confirm("Are you sure you want to cancel this order and clear your cart?")) {
+            setCart({});
+            setStep('menu');
+        }
+    };
+
     const submit = async () => {
         setSubmitAttempted(true);
         if (!event || !venue || !zone || !vertical || !horizontal || !name.trim() || cartLines.length === 0 || !meetsMinimum) return;
         if (paymentMethod === "cash" && !cashPaymentsEnabled) return;
         if (paymentMethod === "card" && !cardPaymentsEnabled) return;
-
         setIsSubmitting(true);
 
         const payload = {
@@ -197,12 +203,14 @@ export default function CustomerOrder() {
 
             // Safety net: If the snapshot somehow didn't catch the order yet, we append it directly
             if (!snapshot.orders.some(o => o.id === orderId)) {
-                snapshot.orders.push({
+                // THIS IS THE FIX: Create a properly typed Order object
+                const newOrder: Order = {
                     id: orderId,
                     status: 'new',
                     placedAt: new Date().toISOString(),
                     ...payload
-                } as any);
+                };
+                snapshot.orders.push(newOrder);
             }
 
             // FORCE INSTANT PUSH TO CLOUD
@@ -226,7 +234,6 @@ export default function CustomerOrder() {
             </main>
         );
     }
-
     if (!event || !venue || !zone) return <CustomerMessage title="This QR code is not valid" message="Ask a SeatServe staff member for the correct zone QR code." />;
     if (!available) return <CustomerMessage title="Ordering is currently closed" message={`${event.name} ${event.opponent ? `vs ${event.opponent}` : ""} is not accepting delivery orders for ${zone.name} right now.`} />;
 
@@ -291,7 +298,22 @@ export default function CustomerOrder() {
                         {cardPaymentsEnabled && <button type="button" className={paymentMethod === "card" ? "is-selected" : ""} onClick={() => setPaymentMethod("card")}><CreditCard size={22} /><span><strong>Pay by credit card at delivery</strong><small>Estimated card fee included. {fulfillmentMethod === "pickup" ? "The pickup window" : "Your runner"} will collect {money(cardTotal)} by card.</small></span><em>{money(cardTotal)}</em></button>}
                         {!cashPaymentsEnabled && !cardPaymentsEnabled && <div className="payment-methods__warning">Payment methods are currently disabled. Please contact SeatServe staff.</div>}</div><div className="demo-payment"><ShieldCheck size={21} /><div><strong>Payment collected {fulfillmentMethod === "pickup" ? "at pickup" : "at delivery"}</strong><span>No online card information is entered in SeatServe.</span></div></div>
                     {minOrderAmount > 0 && !meetsMinimum && <div className="customer-notice customer-notice--checkout">Your order is below the <strong>{money(minOrderAmount)}</strong> minimum.</div>}
-                    <OrderTotals subtotal={subtotal} deliveryFee={deliveryFee} tax={tax} cashTotal={cashTotal} estimatedCardFee={estimatedCardFee} cardTotal={cardTotal} /><button className="customer-primary" disabled={!name.trim() || cartLines.length === 0 || !meetsMinimum || (!cashPaymentsEnabled && !cardPaymentsEnabled) || isSubmitting} onClick={submit}>{isSubmitting ? "Sending to Kitchen..." : `Place order · ${money(total)}`} <ArrowRight size={18} /></button><p className="checkout-trust"><Sparkles size={14} /> You can track the order immediately after checkout.</p></section>}
+                    <OrderTotals subtotal={subtotal} deliveryFee={deliveryFee} tax={tax} cashTotal={cashTotal} estimatedCardFee={estimatedCardFee} cardTotal={cardTotal} />
+
+                    {/* --- NEW BUTTON LOGIC --- */}
+                    <div className="checkout-actions">
+                        {!meetsMinimum && minOrderAmount > 0 ? (
+                            <>
+                                <button className="customer-primary" onClick={() => setStep('menu')}><ChevronLeft size={18} /> Back to Menu</button>
+                                <button className="customer-secondary" onClick={cancelOrder}><Trash2 size={16} /> Cancel Order</button>
+                            </>
+                        ) : (
+                            <button className="customer-primary" disabled={!name.trim() || cartLines.length === 0 || !meetsMinimum || (!cashPaymentsEnabled && !cardPaymentsEnabled) || isSubmitting} onClick={submit}>{isSubmitting ? "Sending to Kitchen..." : `Place order · ${money(total)}`} <ArrowRight size={18} /></button>
+                        )}
+                    </div>
+
+                    <p className="checkout-trust"><Sparkles size={14} /> You can track the order immediately after checkout.</p>
+                </section>}
             </main>
 
             {customizing && <div className="customer-sheet-backdrop" onMouseDown={() => setCustomizing(null)}><section className="customer-sheet" onMouseDown={(event) => event.stopPropagation()}><div className="customer-sheet__handle" /><div className="customer-sheet__heading">{customizing.imageUrl && customizing.displayStyle !== "emoji" ? <img className="customer-sheet__image" src={customizing.imageUrl} alt={customizing.imageAlt || customizing.name} /> : <div className="customer-sheet__emoji">{customizing.emoji || categoryIcon(customizing.category)}</div>}<div><small>{customizing.category}</small><h2>{customizing.name}</h2><p>{customizing.description}</p></div><strong>{money(customizing.price)}</strong></div><div className="customer-sheet__quantity"><span>Quantity</span><div className="quantity-control"><button onClick={() => setCustomQuantity(Math.max(1, customQuantity - 1))}><Minus size={17} /></button><strong>{customQuantity}</strong><button onClick={() => setCustomQuantity(customQuantity + 1)}><Plus size={17} /></button></div></div>

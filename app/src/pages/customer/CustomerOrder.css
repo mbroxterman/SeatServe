@@ -24,3 +24,25 @@
 /* v2.0.6A SeatBeacon attention hardening */
 .seatbeacon__attention{margin:24px auto 0;display:grid;justify-items:center;gap:10px;max-width:340px}.seatbeacon__attention>span{font-size:.78rem;font-weight:850;letter-spacing:.04em;text-transform:uppercase;opacity:.9}.seatbeacon__attention button{border:1px solid currentColor;background:rgba(0,0,0,.16);color:inherit;border-radius:999px;padding:10px 16px;font:inherit;font-weight:900;cursor:pointer}.seatbeacon__unsupported{font-size:.72rem!important;text-transform:none!important;letter-spacing:0!important;opacity:.78!important}.seatbeacon.is-static{animation:none}
 @media(prefers-reduced-motion:reduce){.seatbeacon__attention>span:first-child::after{content:" · reduced motion enabled"}.seatbeacon__attention button{background:rgba(255,255,255,.12)}}
+
+.checkout-actions {
+    margin-top: 18px;
+    display: grid;
+    gap: 10px;
+}
+
+.customer-secondary {
+    width: 100%;
+    border: 1px solid #d4dee9;
+    background: #fff;
+    color: #34465f;
+    border-radius: 14px;
+    padding: 14px 17px;
+    font-weight: 900;
+    font-size: .96rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+}
