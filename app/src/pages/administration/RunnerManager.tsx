@@ -1,13 +1,10 @@
 // FIX: Removed 'type FormEvent' from this import
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
     BadgeCheck, CirclePlus, Copy, MapPin, Pencil, Search, Star, Trash2, UserCheck, UserRound, Users, X, AlertTriangle,
-    RefreshCw,
-    CheckCircle2,
 } from "lucide-react";
 import { useSeatServe } from "../../state/SeatServeContext";
 import type { Runner, RunnerStatus } from "../../types/domain";
-import { getSyncMeta, pullFromGoogleSheets, type SyncMeta } from "../../services/persistence";
 import "./RunnerManager.css";
 
 type RunnerDraft = Omit<Runner, "id" | "activeOrderId" | "completedDeliveries" | "rating">;
@@ -20,8 +17,7 @@ const statusLabel: Record<RunnerStatus, string> = {
     offline: "Offline",
 };
 
-function DashboardHeader({ title, onRefresh, syncMeta, isSyncing, children }: { title: string; onRefresh: () => void; syncMeta: SyncMeta; isSyncing: boolean; children: React.ReactNode }) {
-    const lastSync = syncMeta.lastSuccessfulSyncAt ? new Date(syncMeta.lastSuccessfulSyncAt).toLocaleString() : "never";
+function DashboardHeader({ title, children }: { title: string; children: React.ReactNode }) {
     return (
         <header className="dashboard-header">
             <div className="dashboard-header__main">
@@ -31,16 +27,6 @@ function DashboardHeader({ title, onRefresh, syncMeta, isSyncing, children }: { 
                     <p>Manage the delivery roster, availability, and live assignment status.</p>
                 </div>
                 {children}
-            </div>
-            <div className="dashboard-header__sync">
-                <button onClick={onRefresh} disabled={isSyncing}>
-                    <RefreshCw size={16} className={isSyncing ? "is-syncing" : ""} />
-                    {isSyncing ? "Loading..." : "Load from Sheets"}
-                </button>
-                <div className="sync-status">
-                    <CheckCircle2 size={16} />
-                    <span>Last updated: {lastSync}</span>
-                </div>
             </div>
         </header>
     );
@@ -52,34 +38,6 @@ export default function RunnerManager() {
     const [filter, setFilter] = useState<Filter>("all");
     const [editor, setEditor] = useState<Runner | null | undefined>(undefined);
     const [notice, setNotice] = useState("");
-    const [syncMeta, setSyncMeta] = useState<SyncMeta>(() => getSyncMeta());
-    const [isSyncing, setIsSyncing] = useState(false);
-
-    useEffect(() => {
-        const metaHandler = (event: Event) => setSyncMeta((event as CustomEvent<SyncMeta>).detail ?? getSyncMeta());
-        window.addEventListener("seatserve:sync-meta", metaHandler);
-        return () => window.removeEventListener("seatserve:sync-meta", metaHandler);
-    }, []);
-
-    const handleRefresh = async () => {
-        setIsSyncing(true);
-        setNotice("");
-        try {
-            const result = await pullFromGoogleSheets(data);
-            if (result.data) {
-                replaceData(result.data, "Manual refresh successful");
-                setNotice("Successfully loaded the latest data from Google Sheets.");
-            } else {
-                setNotice("Data is already up to date.");
-            }
-        } catch (error) {
-            setNotice(error instanceof Error ? `Error: ${error.message}` : "Failed to load data.");
-        } finally {
-            setIsSyncing(false);
-            setTimeout(() => setNotice(""), 5000);
-        }
-    };
-
     const filteredRunners = useMemo(() => {
         const normalized = query.trim().toLowerCase();
         return [...data.runners]
@@ -128,7 +86,7 @@ export default function RunnerManager() {
 
     return (
         <section className="runner-page">
-            <DashboardHeader title="Runner Management" onRefresh={handleRefresh} syncMeta={syncMeta} isSyncing={isSyncing}>
+            <DashboardHeader title="Runner Management">
                 <button className="runner-button runner-button--primary" type="button" onClick={() => setEditor(null)}>
                     <CirclePlus size={18} /> Add runner
                 </button>

@@ -1,0 +1,15 @@
+SeatServe v2.1.7A
+
+Correction:
+- Removed Load from Sheets from Administration > Runner Management.
+- Load from Sheets remains on the actual Runner Mobile dashboard.
+- Kitchen Operations retains its Load from Sheets control.
+- Runner Mobile keeps success/failure feedback and last sync time.
+
+Install:
+Replace your current app folder with the included app folder, then run:
+  npm install
+  npm run build
+  npm run dev
+
+Administration footer should show v2.1.7A.
