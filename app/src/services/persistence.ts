@@ -6,7 +6,6 @@ export const ACTIVE_WORKSPACE_KEY = "seatserve.workspace.active.v1";
 export const LEGACY_SYNC_CONFIG_KEY = "seatserve.sync.config.v2";
 export const OLDER_SYNC_CONFIG_KEY = "seatserve.sync.config.v1";
 export const BACKUP_PREFIX = "seatserve.backup.";
-
 export type AutoSyncInterval = 0 | 30 | 60 | 300;
 export type WorkspaceEnvironment = "production" | "development" | "demo";
 export type SyncState = "idle" | "saving" | "saved" | "error" | "conflict";
@@ -67,8 +66,8 @@ export const defaultSyncConfig: SyncConfig = {
     workspaceName: "Mill Valley High School",
     connected: false,
 };
-export const defaultSyncMeta: SyncMeta = { state: "idle", pendingChanges: false };
 
+export const defaultSyncMeta: SyncMeta = { state: "idle", pendingChanges: false };
 const DEPLOYMENT_API_URL = String(import.meta.env.VITE_SEATSERVE_API_URL ?? "").trim();
 const DEPLOYMENT_WORKSPACE_NAME = String(import.meta.env.VITE_SEATSERVE_WORKSPACE_NAME ?? "").trim();
 
@@ -293,7 +292,6 @@ async function parseResponse(response: Response): Promise<RemoteEnvelope> {
     } catch (error) {
         if (error instanceof Error && !error.message.startsWith("Unexpected token")) throw error;
         const preview = text.replace(/\s+/g, " ").trim().slice(0, 180);
-        // THIS IS THE FIX: Added { cause: error } to satisfy ESLint
         throw new Error(`Sync endpoint returned an invalid response (HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""})${preview ? `: ${preview}` : "."}`, { cause: error });
     }
 }
@@ -321,7 +319,6 @@ function failSyncAttempt(startedAt: number, action: "test" | "sync" | "load", er
         lastAttemptAt: getSyncMeta().lastAttemptAt ?? new Date().toISOString(), lastAttemptAction: action,
         lastHttpStatus: response?.status, lastResponseMs: Math.max(0, Math.round(performance.now() - startedAt)), lastAttemptMessage: message,
     });
-    // THIS IS THE FIX: Added { cause: error } to satisfy ESLint
     throw error instanceof Error ? error : new Error(message, { cause: error });
 }
 
@@ -346,8 +343,16 @@ export async function pushToGoogleSheets(data: SeatServeData, force = false): Pr
     const meta = getSyncMeta();
     const startedAt = beginSyncAttempt("sync");
     let response: Response | undefined;
+
+    // --- TIMEOUT FIX STARTS HERE ---
+    const TIMEOUT_MS = 15000; // 15 seconds
+    const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Sync timed out after ${TIMEOUT_MS / 1000} seconds. Your internet may be slow or the Google Sheet may be unresponsive.`)), TIMEOUT_MS)
+    );
+    // --- TIMEOUT FIX ENDS HERE ---
+
     try {
-        response = await fetch("/.netlify/functions/sync", {
+        const fetchPromise = fetch("/.netlify/functions/sync", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -363,6 +368,9 @@ export async function pushToGoogleSheets(data: SeatServeData, force = false): Pr
             }),
         });
 
+        // --- TIMEOUT FIX: Race the fetch against the timeout ---
+        response = await Promise.race([fetchPromise, timeoutPromise]);
+
         const result = await parseResponse(response);
         if (result.conflict) {
             finishSyncAttempt(startedAt, response, result, { state: "conflict", pendingChanges: true, lastError: result.message ?? "Remote data is newer." });
@@ -371,9 +379,11 @@ export async function pushToGoogleSheets(data: SeatServeData, force = false): Pr
         if (!result.ok) throw new Error(result.message ?? "Google Sheets sync failed.");
         if (result.schemaVersion !== undefined && result.schemaVersion < 8) throw new Error("Google Apps Script is out of date. Replace Code.gs with the v2.1.6E version and redeploy a new web-app version.");
         if (result.menuItemCount !== undefined && result.menuItemCount !== data.menuItems.length) throw new Error(`Google Sheets saved ${result.menuItemCount} menu items, but SeatServe sent ${data.menuItems.length}. Please redeploy Code.gs and try Sync now again.`);
+
         const now = new Date().toISOString();
         finishSyncAttempt(startedAt, response, result, { state: "saved", pendingChanges: false, lastSuccessfulSyncAt: now, lastRemoteUpdatedAt: result.updatedAt ?? now, remoteWorkspaceName: result.workspaceName ?? config.workspaceName, lastError: undefined });
         return result;
+
     } catch (error) {
         saveSyncMeta({ ...getSyncMeta(), pendingChanges: true });
         return failSyncAttempt(startedAt, "sync", error, response);
@@ -411,7 +421,6 @@ export async function pullFromGoogleSheets(currentData: SeatServeData): Promise<
         return result;
     } catch (error) { return failSyncAttempt(startedAt, "load", error, response); }
 }
-
 
 export function downloadJsonBackup(data: SeatServeData): void {
     const blob = new Blob([JSON.stringify({ version: 3, workspace: getActiveWorkspace(), exportedAt: new Date().toISOString(), data }, null, 2)], { type: "application/json" });
