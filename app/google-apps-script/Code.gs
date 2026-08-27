@@ -46,6 +46,7 @@ function doPost(e) {
     if (request.action === 'assignRunner') return assignRunner_(request);
     if (request.action === 'autoAssignRunner') return autoAssignRunner_(request);
     if (request.action === 'runnerStatus') return runnerStatus_(request);
+    if (request.action === 'markRunnerAvailable') return markRunnerAvailable_(request);
     if (request.action === 'seatBeacon') return seatBeacon_(request);
     if (request.action === 'orderStatus') return orderStatus_(request);
     return json_({ ok: false, message: 'Unsupported action.' });
@@ -72,7 +73,10 @@ function status_(requestedWorkspaceName) {
 function live_() {
   const ss = getSpreadsheet_();
   const metaSheet = getOrCreate_(ss, META_SHEET, ['key', 'value']);
-  const data = restoreActiveContacts_(readStructuredData_(ss));
+  // This endpoint is polled every 1.5-3 seconds from every open Kitchen, Runner,
+  // and Customer screen, so it only reads the 4 tabs it actually returns instead
+  // of all 16 SeatServe tabs (Venues, Menu Items, Assets, etc. never change here).
+  const data = restoreActiveContacts_(readLiveSaveTables_(ss));
   return json_({
     ok: true,
     live: {
@@ -91,7 +95,11 @@ function order_(orderId) {
   if (!orderId) return json_({ ok: false, message: 'Order ID is required.', schemaVersion: 17 });
   const ss = getSpreadsheet_();
   const metaSheet = getOrCreate_(ss, META_SHEET, ['key', 'value']);
-  const data = restoreActiveContacts_(readStructuredData_(ss));
+  // The customer tracking screen polls this endpoint every 1-2 seconds (faster while
+  // "delivering"), so it only reads the Orders tab it actually needs instead of all
+  // 16 SeatServe tabs. That full read was the main reason SeatBeacon and the
+  // delivered/thank-you screen felt slow to update.
+  const data = restoreActiveContacts_({ orders: readOrdersTable_(ss) });
   const order = (data.orders || []).find(function(item) { return item.id === orderId; });
   return json_({
     ok: true,
@@ -110,12 +118,12 @@ function bootstrap_() {
 function orderStatus_(request) {
   const orderId=String(request.orderId||''), status=String(request.status||''); if(!orderId||!status)return json_({ok:false,message:'Order ID and status are required.',schemaVersion:17});
   const lock=LockService.getScriptLock(); lock.waitLock(10000); try {
-    const ss=getSpreadsheet_(), metaSheet=getOrCreate_(ss,META_SHEET,['key','value']), current=restoreActiveContacts_(readStructuredData_(ss));
+    const ss=getSpreadsheet_(), metaSheet=getOrCreate_(ss,META_SHEET,['key','value']), current=restoreActiveContacts_(readLiveOnly_(ss));
     const order=(current.orders||[]).find(function(x){return x.id===orderId;}); if(!order)return json_({ok:false,message:'Order was not found.',schemaVersion:17});
     const allowed={new:['preparing','cancelled'],preparing:['ready','cancelled'],ready:['assigned','delivered','cancelled'],assigned:['delivering','ready','cancelled'],delivering:['delivered','cancelled'],delivered:[],cancelled:[]};
     if((allowed[order.status]||[]).indexOf(status)<0)return json_({ok:false,message:'Order is '+order.status+' and cannot move to '+status+'.',order:order,schemaVersion:17});
     const now=new Date().toISOString(); order.status=status; if(status==='preparing'){order.acceptedAt=order.acceptedAt||now;order.preparingAt=order.preparingAt||now;} if(status==='ready'){order.readyAt=order.readyAt||now;order.runnerId='';order.assignedAt='';} if(status==='delivering')order.deliveringAt=order.deliveringAt||now; if(status==='delivered')order.deliveredAt=order.deliveredAt||now;
-    const data=sanitizeForSheets_(current); writeStructuredData_(ss,data); setMeta_(metaSheet,'updatedAt',now); setMeta_(metaSheet,'schemaVersion','17'); setMeta_(metaSheet,'lastWriteSource','SeatServe atomic order status'); SpreadsheetApp.flush();
+    const data=sanitizeForSheets_(current); writeLiveOnly_(ss,data); setMeta_(metaSheet,'updatedAt',now); setMeta_(metaSheet,'schemaVersion','17'); setMeta_(metaSheet,'lastWriteSource','SeatServe atomic order status'); SpreadsheetApp.flush();
     return json_({ok:true,message:'Order updated to '+status+'.',order:order,updatedAt:now,schemaVersion:17});
   } finally {lock.releaseLock();}
 }
@@ -129,7 +137,7 @@ function assignRunner_(request) {
   try {
     const ss = getSpreadsheet_();
     const metaSheet = getOrCreate_(ss, META_SHEET, ['key','value']);
-    const current = restoreActiveContacts_(readStructuredData_(ss));
+    const current = restoreActiveContacts_(readLiveOnly_(ss));
     const order = (current.orders || []).find(function(item) { return item.id === orderId; });
     if (!order) return json_({ ok:false, message:'Order was not found.', schemaVersion:16 });
     if (order.fulfillmentMethod === 'pickup') return json_({ ok:false, message:'Pickup orders do not use runners.', schemaVersion:16 });
@@ -159,7 +167,7 @@ function assignRunner_(request) {
     }
     storeActiveContacts_(current.orders || []);
     const data = sanitizeForSheets_(current);
-    writeStructuredData_(ss, data);
+    writeLiveOnly_(ss, data);
     setMeta_(metaSheet, 'updatedAt', now);
     setMeta_(metaSheet, 'schemaVersion', '17');
     setMeta_(metaSheet, 'lastWriteSource', 'SeatServe atomic runner assignment');
@@ -178,7 +186,7 @@ function autoAssignRunner_(request) {
   try {
     const ss = getSpreadsheet_();
     const metaSheet = getOrCreate_(ss, META_SHEET, ['key','value']);
-    const current = restoreActiveContacts_(readStructuredData_(ss));
+    const current = restoreActiveContacts_(readLiveOnly_(ss));
     const order = (current.orders || []).find(function(item) { return item.id === orderId; });
     if (!order) return json_({ ok:false, message:'Order was not found.', schemaVersion:16 });
     if (order.fulfillmentMethod === 'pickup') return json_({ ok:false, message:'Pickup orders do not use runners.', schemaVersion:16 });
@@ -211,7 +219,7 @@ function autoAssignRunner_(request) {
     runner.availableSince = '';
     storeActiveContacts_(current.orders || []);
     const data = sanitizeForSheets_(current);
-    writeStructuredData_(ss, data);
+    writeLiveOnly_(ss, data);
     setMeta_(metaSheet, 'updatedAt', now);
     setMeta_(metaSheet, 'schemaVersion', '17');
     setMeta_(metaSheet, 'lastWriteSource', 'SeatServe server auto assignment');
@@ -230,7 +238,7 @@ function runnerStatus_(request) {
   if (!runnerId || ['available','offline'].indexOf(status) < 0) return json_({ ok:false, message:'Valid runner ID and status are required.', schemaVersion:16 });
   const lock = LockService.getScriptLock(); lock.waitLock(10000);
   try {
-    const ss=getSpreadsheet_(), metaSheet=getOrCreate_(ss,META_SHEET,['key','value']), current=restoreActiveContacts_(readStructuredData_(ss));
+    const ss=getSpreadsheet_(), metaSheet=getOrCreate_(ss,META_SHEET,['key','value']), current=restoreActiveContacts_(readLiveOnly_(ss));
     const runner=(current.runners||[]).find(function(r){return r.id===runnerId;});
     if (!runner) return json_({ok:false,message:'Runner was not found.',schemaVersion:16});
     const activeOrder=(current.orders||[]).find(function(o){return o.id===runner.activeOrderId && ['assigned','delivering'].indexOf(o.status)>=0;});
@@ -238,9 +246,50 @@ function runnerStatus_(request) {
     if (clearAssignment && activeOrder) return json_({ok:false,message:'Cannot clear assignment while '+activeOrder.id+' is still active.',schemaVersion:16});
     const now=new Date().toISOString();
     runner.status=status; runner.activeOrderId=''; runner.assignedAt=''; runner.estimatedAvailableAt=''; runner.availableSince=status==='available'?now:'';
-    const data=sanitizeForSheets_(current); writeStructuredData_(ss,data); setMeta_(metaSheet,'updatedAt',now); setMeta_(metaSheet,'schemaVersion','17'); setMeta_(metaSheet,'lastWriteSource','SeatServe atomic runner status'); SpreadsheetApp.flush();
+    const data=sanitizeForSheets_(current); writeLiveOnly_(ss,data); setMeta_(metaSheet,'updatedAt',now); setMeta_(metaSheet,'schemaVersion','17'); setMeta_(metaSheet,'lastWriteSource','SeatServe atomic runner status'); SpreadsheetApp.flush();
     return json_({ok:true,message:clearAssignment?'Stale assignment cleared and runner made available.':'Runner status updated.',updatedAt:now,schemaVersion:16});
   } finally { lock.releaseLock(); }
+}
+
+// Runner tapping "I'm back at the kitchen" after a delivery. Previously this state
+// change only ever happened in the browser's local memory and relied on a slow,
+// debounced background sync to reach Google Sheets - so Kitchen/Runner Manager could
+// keep showing the runner as unavailable (or busy) long after they were actually
+// free again, and other devices had no reliable way to see it. This makes the
+// return-to-available action atomic and immediate, the same way assignment,
+// SeatBeacon, and runner status changes already work.
+function markRunnerAvailable_(request) {
+  const runnerId = String(request.runnerId || '');
+  if (!runnerId) return json_({ ok:false, message:'Runner ID is required.', schemaVersion:16 });
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const ss = getSpreadsheet_();
+    const metaSheet = getOrCreate_(ss, META_SHEET, ['key','value']);
+    const current = restoreActiveContacts_(readLiveOnly_(ss));
+    const runner = (current.runners || []).find(function(r) { return r.id === runnerId; });
+    if (!runner) return json_({ ok:false, message:'Runner was not found.', schemaVersion:16 });
+    const order = (current.orders || []).find(function(o) { return o.id === runner.activeOrderId; });
+    if (runner.status !== 'returning' || !order || order.status !== 'delivered') {
+      return json_({ ok:false, message: (runner.name || 'Runner') + ' cannot be returned to the queue until the active delivery is complete.', schemaVersion:16 });
+    }
+    const now = new Date().toISOString();
+    runner.status = 'available';
+    runner.activeOrderId = '';
+    runner.assignedAt = '';
+    runner.estimatedAvailableAt = '';
+    runner.availableSince = now;
+    runner.completedDeliveries = Number(runner.completedDeliveries || 0) + 1;
+    const data = sanitizeForSheets_(current);
+    writeLiveOnly_(ss, data);
+    setMeta_(metaSheet, 'updatedAt', now);
+    setMeta_(metaSheet, 'schemaVersion', '17');
+    setMeta_(metaSheet, 'lastWriteSource', 'SeatServe atomic runner return');
+    SpreadsheetApp.flush();
+    return json_({ ok:true, message:(runner.name || 'Runner') + ' returned and is available.', runnerId:runnerId, updatedAt:now, workspaceName:getMeta_(metaSheet,'workspaceName') || ss.getName(), schemaVersion:16 });
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function seatBeacon_(request) {
@@ -248,7 +297,7 @@ function seatBeacon_(request) {
   if (!orderId || ['request','opened','located'].indexOf(action)<0) return json_({ok:false,message:'Valid order and SeatBeacon action are required.',schemaVersion:16});
   const lock=LockService.getScriptLock(); lock.waitLock(10000);
   try {
-    const ss=getSpreadsheet_(), metaSheet=getOrCreate_(ss,META_SHEET,['key','value']), current=restoreActiveContacts_(readStructuredData_(ss));
+    const ss=getSpreadsheet_(), metaSheet=getOrCreate_(ss,META_SHEET,['key','value']), current=restoreActiveContacts_(readLiveOnly_(ss));
     const order=(current.orders||[]).find(function(o){return o.id===orderId;});
     if (!order) return json_({ok:false,message:'Order was not found.',schemaVersion:16});
     if (order.status==='delivered' || order.status==='cancelled') return json_({ok:false,message:'SeatBeacon is closed for completed orders.',schemaVersion:16});
@@ -257,7 +306,7 @@ function seatBeacon_(request) {
     if (action==='request') order.seatBeaconRequestedAt=now;
     if (action==='opened') order.seatBeaconOpenedAt=order.seatBeaconOpenedAt||now;
     if (action==='located') order.customerLocatedAt=order.customerLocatedAt||now;
-    storeActiveContacts_(current.orders||[]); const data=sanitizeForSheets_(current); writeStructuredData_(ss,data); setMeta_(metaSheet,'updatedAt',now); setMeta_(metaSheet,'schemaVersion','17'); setMeta_(metaSheet,'lastWriteSource','SeatServe atomic SeatBeacon'); SpreadsheetApp.flush();
+    storeActiveContacts_(current.orders||[]); const data=sanitizeForSheets_(current); writeLiveOnly_(ss,data); setMeta_(metaSheet,'updatedAt',now); setMeta_(metaSheet,'schemaVersion','17'); setMeta_(metaSheet,'lastWriteSource','SeatServe atomic SeatBeacon'); SpreadsheetApp.flush();
     return json_({ok:true,message:'SeatBeacon updated.',updatedAt:now,schemaVersion:16});
   } finally { lock.releaseLock(); }
 }
@@ -268,7 +317,10 @@ function liveSave_(request) {
   try {
     const ss = getSpreadsheet_();
     const metaSheet = getOrCreate_(ss, META_SHEET, ['key', 'value']);
-    const current = restoreActiveContacts_(readStructuredData_(ss));
+    // This runs 100ms after every local change while Kitchen/Runner/Order screens are
+    // open, so - like live_() - it only touches the 4 tabs it actually merges instead
+    // of reading and rewriting all 16 SeatServe tabs every time.
+    const current = restoreActiveContacts_(readLiveSaveTables_(ss));
     const incoming = request.live || {};
     const rank = { 'new':0, 'preparing':1, 'ready':2, 'assigned':3, 'delivering':4, 'delivered':5, 'cancelled':99 };
     const remoteById = {};
@@ -298,13 +350,13 @@ function liveSave_(request) {
 
     storeActiveContacts_(current.orders || []);
     const data = sanitizeForSheets_(current);
-    writeStructuredData_(ss, data);
+    writeLiveSaveTables_(ss, data);
     const updatedAt = new Date().toISOString();
     setMeta_(metaSheet, 'updatedAt', updatedAt);
     setMeta_(metaSheet, 'schemaVersion', '17');
     setMeta_(metaSheet, 'lastWriteSource', 'SeatServe atomic live sync');
     SpreadsheetApp.flush();
-    return json_({ ok:true, updatedAt:updatedAt, workspaceName:getMeta_(metaSheet,'workspaceName') || ss.getName(), structuredSync:true, schemaVersion:16, menuItemCount:(data.menuItems || []).length });
+    return json_({ ok:true, updatedAt:updatedAt, workspaceName:getMeta_(metaSheet,'workspaceName') || ss.getName(), structuredSync:true, schemaVersion:16 });
   } finally {
     lock.releaseLock();
   }
@@ -370,11 +422,97 @@ function load_() {
   });
 }
 
-function writeStructuredData_(ss, data) {
-  const assetRows = [];
+// ---------------------------------------------------------------------------
+// Lean per-table read/write helpers.
+//
+// The full structured read/write (readStructuredData_ / writeStructuredData_
+// below) touches all 16 SeatServe tabs, including Venues, Menu Items, Menus,
+// and the Assets tab (which can be large once menu photos are stored there).
+// That's appropriate for a full config sync, but several endpoints are polled
+// or hit every 1-3 seconds from every open Kitchen/Runner/Customer screen, or
+// fire on every single order/runner change - those only ever touch Events,
+// Orders, Runners, and Customer Feedback, so they use these narrower helpers
+// instead. This is what makes auto-assign, SeatBeacon, order status changes,
+// and the live poll itself fast.
+// ---------------------------------------------------------------------------
+
+function readEventsTable_(ss) {
+  return rowsAsObjects_(ss, 'Events').filter(hasId_).map(function(x) { return {
+    id:string_(x.id), name:string_(x.name), opponent:string_(x.opponent), venueId:string_(x.venueId), menuId:optionalString_(x.menuId), startsAt:string_(x.startsAt), orderingOpensAt:string_(x.orderingOpensAt), orderingClosesAt:string_(x.orderingClosesAt), status:string_(x.status), orderingEnabled:bool_(x.orderingEnabled)
+  }; });
+}
+
+function writeEventsTable_(ss, data) {
   writeTable_(ss, 'Events', [
     'id','name','opponent','venueId','menuId','startsAt','orderingOpensAt','orderingClosesAt','status','orderingEnabled'
   ], (data.events || []).map(function(x) { return [x.id,x.name,x.opponent,x.venueId,x.menuId || '',x.startsAt,x.orderingOpensAt,x.orderingClosesAt,x.status,boolean_(x.orderingEnabled)]; }));
+}
+
+function readRunnersTable_(ss) {
+  return rowsAsObjects_(ss, 'Runners').filter(hasId_).map(function(x) { return {
+    id:string_(x.id), name:string_(x.name), email:string_(x.email), phone:string_(x.phone), role:string_(x.role) || 'runner', status:string_(x.status) || 'offline', active:bool_(x.active), venueId:string_(x.venueId), zoneIds:splitList_(x.zoneIds), completedDeliveries:number_(x.completedDeliveries), rating:number_(x.rating), activeOrderId:optionalString_(x.activeOrderId), availableSince:optionalString_(x.availableSince), assignedAt:optionalString_(x.assignedAt), estimatedAvailableAt:optionalString_(x.estimatedAvailableAt)
+  }; });
+}
+
+function writeRunnersTable_(ss, data) {
+  writeTable_(ss, 'Runners', ['id','name','email','phone','role','status','active','venueId','zoneIds','completedDeliveries','rating','activeOrderId','availableSince','assignedAt','estimatedAvailableAt'], (data.runners || []).map(function(x) {
+    return [x.id,x.name,x.email || '',x.phone || '',x.role,x.status,boolean_(x.active),x.venueId || '',(x.zoneIds || []).join(', '),number_(x.completedDeliveries),number_(x.rating),x.activeOrderId || '',x.availableSince || '',x.assignedAt || '',x.estimatedAvailableAt || ''];
+  }));
+}
+
+function readOrdersTable_(ss) {
+  return rowsAsObjects_(ss, 'Orders').filter(hasId_).map(function(x) { return {
+    id:string_(x.id), eventId:string_(x.eventId), runnerId:optionalString_(x.runnerId), fulfillmentMethod:string_(x.fulfillmentMethod) || 'delivery', items:parseJson_(x.itemsJson, []), customer:{ name:string_(x.customerName) }, location:{ venueId:string_(x.venueId), zoneId:string_(x.zoneId), vertical:string_(x.vertical), horizontal:string_(x.horizontal), notes:optionalString_(x.locationNotes) }, subtotal:number_(x.subtotal), tax:number_(x.tax), total:number_(x.total), deliveryFee:number_(x.deliveryFee), paymentMethod:optionalString_(x.paymentMethod), cashTotal:optionalNumber_(x.cashTotal), estimatedCardFee:optionalNumber_(x.estimatedCardFee), cardTotal:optionalNumber_(x.cardTotal), paymentCollectedAt:optionalString_(x.paymentCollectedAt), seatBeaconRequestedAt:optionalString_(x.seatBeaconRequestedAt), seatBeaconOpenedAt:optionalString_(x.seatBeaconOpenedAt), customerLocatedAt:optionalString_(x.customerLocatedAt), status:string_(x.status), placedAt:string_(x.placedAt), acceptedAt:optionalString_(x.acceptedAt), preparingAt:optionalString_(x.preparingAt), readyAt:optionalString_(x.readyAt), assignedAt:optionalString_(x.assignedAt), deliveringAt:optionalString_(x.deliveringAt), deliveredAt:optionalString_(x.deliveredAt), assignmentQueuedAt:optionalString_(x.assignmentQueuedAt)
+  }; });
+}
+
+function writeOrdersTable_(ss, data) {
+  writeTable_(ss, 'Orders', [
+    'id','eventId','runnerId','status','fulfillmentMethod','customerName','venueId','zoneId','vertical','horizontal','locationNotes','itemsJson','subtotal','tax','deliveryFee','total','paymentMethod','cashTotal','estimatedCardFee','cardTotal','paymentCollectedAt','seatBeaconRequestedAt','seatBeaconOpenedAt','customerLocatedAt','placedAt','acceptedAt','preparingAt','readyAt','assignedAt','deliveringAt','deliveredAt','assignmentQueuedAt'
+  ], (data.orders || []).map(function(x) {
+    const customer = x.customer || {};
+    const location = x.location || {};
+    return [x.id,x.eventId,x.runnerId || '',x.status,x.fulfillmentMethod || 'delivery',customer.name || '',location.venueId || '',location.zoneId || '',location.vertical || '',location.horizontal || '',location.notes || '',JSON.stringify(x.items || []),number_(x.subtotal),number_(x.tax),number_(x.deliveryFee),number_(x.total),x.paymentMethod || '',nullableNumber_(x.cashTotal),nullableNumber_(x.estimatedCardFee),nullableNumber_(x.cardTotal),x.paymentCollectedAt || '',x.seatBeaconRequestedAt || '',x.seatBeaconOpenedAt || '',x.customerLocatedAt || '',x.placedAt || '',x.acceptedAt || '',x.preparingAt || '',x.readyAt || '',x.assignedAt || '',x.deliveringAt || '',x.deliveredAt || '',x.assignmentQueuedAt || ''];
+  }));
+}
+
+function readFeedbackTable_(ss) {
+  return rowsAsObjects_(ss, 'Customer Feedback').filter(hasId_).map(function(x) { return { id:string_(x.id), orderId:string_(x.orderId), eventId:string_(x.eventId), rating:optionalNumber_(x.rating), comments:optionalString_(x.comments), submittedAt:string_(x.submittedAt) }; });
+}
+
+function writeFeedbackTable_(ss, data) {
+  writeTable_(ss, 'Customer Feedback', ['id','orderId','eventId','rating','comments','submittedAt'], (data.feedback || []).map(function(x) {
+    return [x.id,x.orderId,x.eventId,nullableNumber_(x.rating),x.comments || '',x.submittedAt || ''];
+  }));
+}
+
+// Orders + Runners only. Used by the per-action endpoints (assign, auto-assign,
+// runner status, runner return, SeatBeacon, order status) - a single order or
+// runner change no longer has to read and rewrite all 16 tabs.
+function readLiveOnly_(ss) {
+  return { orders: readOrdersTable_(ss), runners: readRunnersTable_(ss) };
+}
+function writeLiveOnly_(ss, data) {
+  writeOrdersTable_(ss, data);
+  writeRunnersTable_(ss, data);
+}
+
+// Events + Orders + Runners + Feedback. Used by the live poll (live_) and the
+// background live-save push (liveSave_), which never need Venues, Menu Items,
+// Menus, or Assets.
+function readLiveSaveTables_(ss) {
+  return { events: readEventsTable_(ss), orders: readOrdersTable_(ss), runners: readRunnersTable_(ss), feedback: readFeedbackTable_(ss) };
+}
+function writeLiveSaveTables_(ss, data) {
+  writeEventsTable_(ss, data);
+  writeOrdersTable_(ss, data);
+  writeRunnersTable_(ss, data);
+  writeFeedbackTable_(ss, data);
+}
+
+function writeStructuredData_(ss, data) {
+  const assetRows = [];
+  writeEventsTable_(ss, data);
 
   writeTable_(ss, 'Venues', ['id','name','type','address','active'], (data.venues || []).map(function(x) {
     return [x.id,x.name,x.type,x.address,boolean_(x.active)];
@@ -405,21 +543,9 @@ function writeStructuredData_(ss, data) {
     return [x.id,x.name,x.description || '',boolean_(x.active),(x.itemIds || []).join(', '),JSON.stringify(x.priceOverrides || {}),(x.hiddenItemIds || []).join(', ')];
   }));
 
-  writeTable_(ss, 'Runners', ['id','name','email','phone','role','status','active','venueId','zoneIds','completedDeliveries','rating','activeOrderId','availableSince','assignedAt','estimatedAvailableAt'], (data.runners || []).map(function(x) {
-    return [x.id,x.name,x.email || '',x.phone || '',x.role,x.status,boolean_(x.active),x.venueId || '',(x.zoneIds || []).join(', '),number_(x.completedDeliveries),number_(x.rating),x.activeOrderId || '',x.availableSince || '',x.assignedAt || '',x.estimatedAvailableAt || ''];
-  }));
-
-  writeTable_(ss, 'Orders', [
-    'id','eventId','runnerId','status','fulfillmentMethod','customerName','venueId','zoneId','vertical','horizontal','locationNotes','itemsJson','subtotal','tax','deliveryFee','total','paymentMethod','cashTotal','estimatedCardFee','cardTotal','paymentCollectedAt','seatBeaconRequestedAt','seatBeaconOpenedAt','customerLocatedAt','placedAt','acceptedAt','preparingAt','readyAt','assignedAt','deliveringAt','deliveredAt','assignmentQueuedAt'
-  ], (data.orders || []).map(function(x) {
-    const customer = x.customer || {};
-    const location = x.location || {};
-    return [x.id,x.eventId,x.runnerId || '',x.status,x.fulfillmentMethod || 'delivery',customer.name || '',location.venueId || '',location.zoneId || '',location.vertical || '',location.horizontal || '',location.notes || '',JSON.stringify(x.items || []),number_(x.subtotal),number_(x.tax),number_(x.deliveryFee),number_(x.total),x.paymentMethod || '',nullableNumber_(x.cashTotal),nullableNumber_(x.estimatedCardFee),nullableNumber_(x.cardTotal),x.paymentCollectedAt || '',x.seatBeaconRequestedAt || '',x.seatBeaconOpenedAt || '',x.customerLocatedAt || '',x.placedAt || '',x.acceptedAt || '',x.preparingAt || '',x.readyAt || '',x.assignedAt || '',x.deliveringAt || '',x.deliveredAt || '',x.assignmentQueuedAt || ''];
-  }));
-
-  writeTable_(ss, 'Customer Feedback', ['id','orderId','eventId','rating','comments','submittedAt'], (data.feedback || []).map(function(x) {
-    return [x.id,x.orderId,x.eventId,nullableNumber_(x.rating),x.comments || '',x.submittedAt || ''];
-  }));
+  writeRunnersTable_(ss, data);
+  writeOrdersTable_(ss, data);
+  writeFeedbackTable_(ss, data);
 
   writeTable_(ss, 'Archived Orders', ['id','eventId','runnerId','status','fulfillmentMethod','customerName','venueId','zoneId','itemsJson','total','paymentMethod','placedAt','deliveredAt'], (data.archivedOrders || []).map(function(x) { var c=x.customer||{}, l=x.location||{}; return [x.id,x.eventId,x.runnerId||'',x.status,x.fulfillmentMethod||'delivery',c.name||'',l.venueId||'',l.zoneId||'',JSON.stringify(x.items||[]),number_(x.total),x.paymentMethod||'',x.placedAt||'',x.deliveredAt||'']; }));
   writeTable_(ss, 'Archived Feedback', ['id','orderId','eventId','rating','comments','submittedAt'], (data.archivedFeedback || []).map(function(x) { return [x.id,x.orderId,x.eventId,nullableNumber_(x.rating),x.comments||'',x.submittedAt||'']; }));
@@ -471,9 +597,7 @@ function readStructuredData_(ss) {
   const eventSheet = ss.getSheetByName('Events');
   if (!eventSheet || eventSheet.getLastRow() < 1) throw new Error('Structured SeatServe tabs have not been synchronized yet.');
 
-  const events = rowsAsObjects_(ss, 'Events').filter(hasId_).map(function(x) { return {
-    id:string_(x.id), name:string_(x.name), opponent:string_(x.opponent), venueId:string_(x.venueId), menuId:optionalString_(x.menuId), startsAt:string_(x.startsAt), orderingOpensAt:string_(x.orderingOpensAt), orderingClosesAt:string_(x.orderingClosesAt), status:string_(x.status), orderingEnabled:bool_(x.orderingEnabled)
-  }; });
+  const events = readEventsTable_(ss);
 
   const zoneRows = rowsAsObjects_(ss, 'Zones').filter(hasId_);
   const sectionRows = rowsAsObjects_(ss, 'Venue Sections').filter(hasId_);
@@ -502,15 +626,11 @@ function readStructuredData_(ss) {
     id:string_(x.id), name:string_(x.name), description:string_(x.description), active:bool_(x.active), itemIds:splitList_(x.itemIds), priceOverrides:parseJson_(x.priceOverridesJson, {}), hiddenItemIds:splitList_(x.hiddenItemIds)
   }; });
 
-  const runners = rowsAsObjects_(ss, 'Runners').filter(hasId_).map(function(x) { return {
-    id:string_(x.id), name:string_(x.name), email:string_(x.email), phone:string_(x.phone), role:string_(x.role) || 'runner', status:string_(x.status) || 'offline', active:bool_(x.active), venueId:string_(x.venueId), zoneIds:splitList_(x.zoneIds), completedDeliveries:number_(x.completedDeliveries), rating:number_(x.rating), activeOrderId:optionalString_(x.activeOrderId), availableSince:optionalString_(x.availableSince), assignedAt:optionalString_(x.assignedAt), estimatedAvailableAt:optionalString_(x.estimatedAvailableAt)
-  }; });
+  const runners = readRunnersTable_(ss);
 
-  const orders = rowsAsObjects_(ss, 'Orders').filter(hasId_).map(function(x) { return {
-    id:string_(x.id), eventId:string_(x.eventId), runnerId:optionalString_(x.runnerId), fulfillmentMethod:string_(x.fulfillmentMethod) || 'delivery', items:parseJson_(x.itemsJson, []), customer:{ name:string_(x.customerName) }, location:{ venueId:string_(x.venueId), zoneId:string_(x.zoneId), vertical:string_(x.vertical), horizontal:string_(x.horizontal), notes:optionalString_(x.locationNotes) }, subtotal:number_(x.subtotal), tax:number_(x.tax), total:number_(x.total), deliveryFee:number_(x.deliveryFee), paymentMethod:optionalString_(x.paymentMethod), cashTotal:optionalNumber_(x.cashTotal), estimatedCardFee:optionalNumber_(x.estimatedCardFee), cardTotal:optionalNumber_(x.cardTotal), paymentCollectedAt:optionalString_(x.paymentCollectedAt), seatBeaconRequestedAt:optionalString_(x.seatBeaconRequestedAt), seatBeaconOpenedAt:optionalString_(x.seatBeaconOpenedAt), customerLocatedAt:optionalString_(x.customerLocatedAt), status:string_(x.status), placedAt:string_(x.placedAt), acceptedAt:optionalString_(x.acceptedAt), preparingAt:optionalString_(x.preparingAt), readyAt:optionalString_(x.readyAt), assignedAt:optionalString_(x.assignedAt), deliveringAt:optionalString_(x.deliveringAt), deliveredAt:optionalString_(x.deliveredAt), assignmentQueuedAt:optionalString_(x.assignmentQueuedAt)
-  }; });
+  const orders = readOrdersTable_(ss);
 
-  const feedback = rowsAsObjects_(ss, 'Customer Feedback').filter(hasId_).map(function(x) { return { id:string_(x.id), orderId:string_(x.orderId), eventId:string_(x.eventId), rating:optionalNumber_(x.rating), comments:optionalString_(x.comments), submittedAt:string_(x.submittedAt) }; });
+  const feedback = readFeedbackTable_(ss);
   const activity = rowsAsObjects_(ss, 'Activity').filter(hasId_).map(function(x) { return { id:string_(x.id), message:string_(x.message), occurredAt:string_(x.occurredAt), tone:string_(x.tone) || 'info' }; });
 
   const settings = keyValueMap_(rowsAsObjects_(ss, 'Workspace Settings'));

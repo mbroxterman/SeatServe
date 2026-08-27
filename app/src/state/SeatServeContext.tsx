@@ -11,11 +11,13 @@ import {
     getSyncMeta,
     isDeploymentManagedSync,
     markLocalChange,
+    markRunnerAvailableLive,
     pollGoogleSheets,
     pollLiveGoogleSheets,
     pushLiveGoogleSheets,
     pushToGoogleSheets,
-    saveSyncMeta
+    saveSyncMeta,
+    updateOrderStatusLive
 } from "../services/persistence";
 import type {
     ActivityItem,
@@ -585,6 +587,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
     };
 
     const updateOrderStatus = (orderId: string, status: Order["status"]) => {
+        let applied = false;
         setData((current) => {
             const order = current.orders.find((item) => item.id === orderId);
             if (!order || order.status === status) return current;
@@ -623,6 +626,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
                 if (status === "delivering") return { ...runner, status: "assigned" as const, activeOrderId: orderId };
                 return runner;
             });
+            applied = true;
             return {
                 ...current,
                 orders: current.orders.map((item) => item.id === orderId ? { ...item, status, ...timestampPatch, ...(status === "ready" ? { runnerId: undefined, assignedAt: undefined } : {}) } : item),
@@ -630,6 +634,11 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
                 activity: pushActivity(current, `Order ${orderId} moved to ${status}`, status === "cancelled" ? "warning" : status === "delivered" ? "success" : "info"),
             };
         });
+        // Push the order status immediately instead of waiting on the debounced
+        // background autosync - this is what makes the runner's "delivering"/
+        // "delivered" taps (and the customer's thank-you screen/SeatBeacon
+        // close) show up promptly instead of lagging a poll cycle behind.
+        if (applied && isDeploymentManagedSync() && navigator.onLine) void updateOrderStatusLive(orderId, status).then((result) => { if (result.order) mergeRemoteOrder(result.order); }).then(() => refreshLiveOperationalData()).catch((error) => window.dispatchEvent(new CustomEvent("seatserve:operation-notice", { detail: { message: `Order update failed: ${error instanceof Error ? error.message : "Unknown error"}`, tone: "error" } })));
     };
 
 
@@ -751,6 +760,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
     };
 
     const markRunnerAvailable = (runnerId: string) => {
+        let outcome: { type: "available" } | { type: "reassigned"; orderId: string } | undefined;
         setData((current) => {
             const runner = current.runners.find((item) => item.id === runnerId);
             if (!runner) return current;
@@ -779,6 +789,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
             if (queuedOrder) {
                 const estimateMinutes = getZoneEstimate(current, queuedOrder);
                 const estimatedAvailableAt = new Date(now.getTime() + estimateMinutes * 60_000).toISOString();
+                outcome = { type: "reassigned", orderId: queuedOrder.id };
                 return {
                     ...current,
                     venues,
@@ -795,6 +806,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
                     activity: pushActivity(current, `${runner.name} returned and was assigned to queued order ${queuedOrder.id}`, "success"),
                 };
             }
+            outcome = { type: "available" };
             return {
                 ...current,
                 venues,
@@ -810,6 +822,14 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
                 activity: pushActivity(current, `${runner.name} returned and is available`, "success"),
             };
         });
+        // Previously this only ever updated local state and relied on the slow,
+        // debounced background sync to reach Google Sheets - so other screens
+        // could keep showing the runner as unavailable well after they'd
+        // actually returned. Push the outcome immediately, same as every other
+        // atomic runner/order action.
+        if (!outcome || !isDeploymentManagedSync() || !navigator.onLine) return;
+        const pushLive = outcome.type === "available" ? markRunnerAvailableLive(runnerId) : assignRunnerLive(outcome.orderId, runnerId);
+        void pushLive.then(() => refreshLiveOperationalData()).catch((error) => window.dispatchEvent(new CustomEvent("seatserve:operation-notice", { detail: { message: `Runner return failed: ${error instanceof Error ? error.message : "Unknown error"}`, tone: "error" } })));
     };
 
     const cancelOrder = (orderId: string) => updateOrderStatus(orderId, "cancelled");
