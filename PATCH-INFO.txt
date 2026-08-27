@@ -1,30 +1,21 @@
-SeatServe v2.1.7H - Runner State & SeatBeacon Reliability
-
-Baseline: v2.1.7G
-Apps Script schema: v16
+SeatServe v2.1.7I - Kitchen Confirmed Writes + Fresh QR Bootstrap
+Expected client: v2.1.7I
+Expected Apps Script schema: v17
 
 Changed files:
-- app/src/services/persistence.ts
-- app/src/state/SeatServeContext.tsx
-- app/src/pages/runner/RunnerMobile.tsx
-- app/src/pages/administration/RunnerManager.tsx
-- app/src/pages/customer/OrderTracking.tsx
-- app/src/layouts/AdminLayout.tsx
-- app/google-apps-script/Code.gs
+app/src/pages/administration/KitchenOperations.tsx
+app/src/pages/customer/StableZoneEntry.tsx
+app/src/services/persistence.ts
+app/src/layouts/AdminLayout.tsx
+app/google-apps-script/Code.gs
 
 Changes:
-- Runner Available/Unavailable writes immediately to Google through an atomic runner-status endpoint.
-- Stale runner assignments can be cleared from Runner Management with server validation.
-- Active deliveries cannot be force-cleared accidentally.
-- Runner live refresh is faster while operating.
-- SeatBeacon request and acknowledgement use an immediate atomic endpoint.
-- Customer order polling accelerates to 1 second while Out for Delivery.
-- Completed orders reject stale SeatBeacon requests so Delivered remains authoritative.
-- Client version updated to v2.1.7H.
+- Kitchen Preparing/Ready transitions are confirmed by Google before merging into UI.
+- Kitchen shows Saving / Saved / Failed feedback via the existing notice area.
+- Fresh QR devices bootstrap current venue/event/menu configuration from Google before showing Venue/Zone not found.
+- Adds atomic orderStatus backend action.
+- Adds lightweight customer bootstrap endpoint.
 
-Install:
-Extract this ZIP directly into C:\Users\mbroxte\Documents\SeatServe and replace matching files.
-No npm install is required.
-Run npm run build before committing.
-Redeploy app/google-apps-script/Code.gs as a new version of the existing Apps Script web app.
-Test Connection should report schema v16.
+Install: extract into C:\Users\mbroxte\Documents\SeatServe and replace files.
+Code.gs MUST be redeployed as a new version. Test Connection should show schema v17.
+No npm install required. Run npm run build before pushing.

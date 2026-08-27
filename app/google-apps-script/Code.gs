@@ -31,6 +31,7 @@ function doGet(e) {
     if (action === 'load') return load_();
     if (action === 'live') return live_();
     if (action === 'order') return order_(e && e.parameter ? e.parameter.orderId : '');
+    if (action === 'bootstrap') return bootstrap_();
     return json_({ ok: false, message: 'Unsupported action.' });
   } catch (error) {
     return json_({ ok: false, message: errorMessage_(error) });
@@ -46,6 +47,7 @@ function doPost(e) {
     if (request.action === 'autoAssignRunner') return autoAssignRunner_(request);
     if (request.action === 'runnerStatus') return runnerStatus_(request);
     if (request.action === 'seatBeacon') return seatBeacon_(request);
+    if (request.action === 'orderStatus') return orderStatus_(request);
     return json_({ ok: false, message: 'Unsupported action.' });
   } catch (error) {
     return json_({ ok: false, message: errorMessage_(error) });
@@ -63,7 +65,7 @@ function status_(requestedWorkspaceName) {
     updatedAt: getMeta_(metaSheet, 'updatedAt') || '',
     spreadsheetName: ss.getName(),
     structuredSync: true,
-    schemaVersion: 16
+    schemaVersion: 17
   });
 }
 
@@ -81,12 +83,12 @@ function live_() {
     },
     updatedAt: getMeta_(metaSheet, 'updatedAt') || '',
     workspaceName: getMeta_(metaSheet, 'workspaceName') || ss.getName(),
-    schemaVersion: 16
+    schemaVersion: 17
   });
 }
 
 function order_(orderId) {
-  if (!orderId) return json_({ ok: false, message: 'Order ID is required.', schemaVersion: 16 });
+  if (!orderId) return json_({ ok: false, message: 'Order ID is required.', schemaVersion: 17 });
   const ss = getSpreadsheet_();
   const metaSheet = getOrCreate_(ss, META_SHEET, ['key', 'value']);
   const data = restoreActiveContacts_(readStructuredData_(ss));
@@ -96,8 +98,26 @@ function order_(orderId) {
     order: order || null,
     updatedAt: getMeta_(metaSheet, 'updatedAt') || '',
     workspaceName: getMeta_(metaSheet, 'workspaceName') || ss.getName(),
-    schemaVersion: 16
+    schemaVersion: 17
   });
+}
+
+function bootstrap_() {
+  const ss=getSpreadsheet_(); const metaSheet=getOrCreate_(ss,META_SHEET,['key','value']); const data=restoreActiveContacts_(readStructuredData_(ss));
+  return json_({ok:true,data:{events:data.events||[],venues:data.venues||[],menuCategories:data.menuCategories||[],menuItems:data.menuItems||[],menus:data.menus||[],runners:[],orders:[],feedback:[],customerExperience:data.customerExperience,staffAccess:data.staffAccess,activity:[],archivedOrders:[],archivedFeedback:[]},updatedAt:getMeta_(metaSheet,'updatedAt')||'',workspaceName:getMeta_(metaSheet,'workspaceName')||ss.getName(),schemaVersion:17});
+}
+
+function orderStatus_(request) {
+  const orderId=String(request.orderId||''), status=String(request.status||''); if(!orderId||!status)return json_({ok:false,message:'Order ID and status are required.',schemaVersion:17});
+  const lock=LockService.getScriptLock(); lock.waitLock(10000); try {
+    const ss=getSpreadsheet_(), metaSheet=getOrCreate_(ss,META_SHEET,['key','value']), current=restoreActiveContacts_(readStructuredData_(ss));
+    const order=(current.orders||[]).find(function(x){return x.id===orderId;}); if(!order)return json_({ok:false,message:'Order was not found.',schemaVersion:17});
+    const allowed={new:['preparing','cancelled'],preparing:['ready','cancelled'],ready:['assigned','delivered','cancelled'],assigned:['delivering','ready','cancelled'],delivering:['delivered','cancelled'],delivered:[],cancelled:[]};
+    if((allowed[order.status]||[]).indexOf(status)<0)return json_({ok:false,message:'Order is '+order.status+' and cannot move to '+status+'.',order:order,schemaVersion:17});
+    const now=new Date().toISOString(); order.status=status; if(status==='preparing'){order.acceptedAt=order.acceptedAt||now;order.preparingAt=order.preparingAt||now;} if(status==='ready'){order.readyAt=order.readyAt||now;order.runnerId='';order.assignedAt='';} if(status==='delivering')order.deliveringAt=order.deliveringAt||now; if(status==='delivered')order.deliveredAt=order.deliveredAt||now;
+    const data=sanitizeForSheets_(current); writeStructuredData_(ss,data); setMeta_(metaSheet,'updatedAt',now); setMeta_(metaSheet,'schemaVersion','17'); setMeta_(metaSheet,'lastWriteSource','SeatServe atomic order status'); SpreadsheetApp.flush();
+    return json_({ok:true,message:'Order updated to '+status+'.',order:order,updatedAt:now,schemaVersion:17});
+  } finally {lock.releaseLock();}
 }
 
 function assignRunner_(request) {
@@ -141,7 +161,7 @@ function assignRunner_(request) {
     const data = sanitizeForSheets_(current);
     writeStructuredData_(ss, data);
     setMeta_(metaSheet, 'updatedAt', now);
-    setMeta_(metaSheet, 'schemaVersion', '16');
+    setMeta_(metaSheet, 'schemaVersion', '17');
     setMeta_(metaSheet, 'lastWriteSource', 'SeatServe atomic runner assignment');
     SpreadsheetApp.flush();
     return json_({ ok:true, updatedAt:now, workspaceName:getMeta_(metaSheet,'workspaceName') || ss.getName(), structuredSync:true, schemaVersion:16 });
@@ -193,7 +213,7 @@ function autoAssignRunner_(request) {
     const data = sanitizeForSheets_(current);
     writeStructuredData_(ss, data);
     setMeta_(metaSheet, 'updatedAt', now);
-    setMeta_(metaSheet, 'schemaVersion', '16');
+    setMeta_(metaSheet, 'schemaVersion', '17');
     setMeta_(metaSheet, 'lastWriteSource', 'SeatServe server auto assignment');
     SpreadsheetApp.flush();
     return json_({ ok:true, runnerId:runner.id, runnerName:runner.name || '', message:'Runner ' + (runner.name || '') + ' assigned successfully.', updatedAt:now, workspaceName:getMeta_(metaSheet,'workspaceName') || ss.getName(), structuredSync:true, schemaVersion:16, activeRunnerCount:active.length, availableRunnerCount:available.length });
@@ -218,7 +238,7 @@ function runnerStatus_(request) {
     if (clearAssignment && activeOrder) return json_({ok:false,message:'Cannot clear assignment while '+activeOrder.id+' is still active.',schemaVersion:16});
     const now=new Date().toISOString();
     runner.status=status; runner.activeOrderId=''; runner.assignedAt=''; runner.estimatedAvailableAt=''; runner.availableSince=status==='available'?now:'';
-    const data=sanitizeForSheets_(current); writeStructuredData_(ss,data); setMeta_(metaSheet,'updatedAt',now); setMeta_(metaSheet,'schemaVersion','16'); setMeta_(metaSheet,'lastWriteSource','SeatServe atomic runner status'); SpreadsheetApp.flush();
+    const data=sanitizeForSheets_(current); writeStructuredData_(ss,data); setMeta_(metaSheet,'updatedAt',now); setMeta_(metaSheet,'schemaVersion','17'); setMeta_(metaSheet,'lastWriteSource','SeatServe atomic runner status'); SpreadsheetApp.flush();
     return json_({ok:true,message:clearAssignment?'Stale assignment cleared and runner made available.':'Runner status updated.',updatedAt:now,schemaVersion:16});
   } finally { lock.releaseLock(); }
 }
@@ -237,7 +257,7 @@ function seatBeacon_(request) {
     if (action==='request') order.seatBeaconRequestedAt=now;
     if (action==='opened') order.seatBeaconOpenedAt=order.seatBeaconOpenedAt||now;
     if (action==='located') order.customerLocatedAt=order.customerLocatedAt||now;
-    storeActiveContacts_(current.orders||[]); const data=sanitizeForSheets_(current); writeStructuredData_(ss,data); setMeta_(metaSheet,'updatedAt',now); setMeta_(metaSheet,'schemaVersion','16'); setMeta_(metaSheet,'lastWriteSource','SeatServe atomic SeatBeacon'); SpreadsheetApp.flush();
+    storeActiveContacts_(current.orders||[]); const data=sanitizeForSheets_(current); writeStructuredData_(ss,data); setMeta_(metaSheet,'updatedAt',now); setMeta_(metaSheet,'schemaVersion','17'); setMeta_(metaSheet,'lastWriteSource','SeatServe atomic SeatBeacon'); SpreadsheetApp.flush();
     return json_({ok:true,message:'SeatBeacon updated.',updatedAt:now,schemaVersion:16});
   } finally { lock.releaseLock(); }
 }
@@ -281,7 +301,7 @@ function liveSave_(request) {
     writeStructuredData_(ss, data);
     const updatedAt = new Date().toISOString();
     setMeta_(metaSheet, 'updatedAt', updatedAt);
-    setMeta_(metaSheet, 'schemaVersion', '16');
+    setMeta_(metaSheet, 'schemaVersion', '17');
     setMeta_(metaSheet, 'lastWriteSource', 'SeatServe atomic live sync');
     SpreadsheetApp.flush();
     return json_({ ok:true, updatedAt:updatedAt, workspaceName:getMeta_(metaSheet,'workspaceName') || ss.getName(), structuredSync:true, schemaVersion:16, menuItemCount:(data.menuItems || []).length });
@@ -316,11 +336,11 @@ function save_(request) {
   setMeta_(metaSheet, 'workspaceName', workspaceName);
   setMeta_(metaSheet, 'updatedAt', updatedAt);
   setMeta_(metaSheet, 'clientUpdatedAt', request.clientUpdatedAt || updatedAt);
-  setMeta_(metaSheet, 'schemaVersion', '16');
+  setMeta_(metaSheet, 'schemaVersion', '17');
   setMeta_(metaSheet, 'lastWriteSource', 'SeatServe app');
   SpreadsheetApp.flush();
 
-  return json_({ ok: true, updatedAt: updatedAt, workspaceName: workspaceName, structuredSync: true, schemaVersion: 16, menuItemCount: (data.menuItems || []).length });
+  return json_({ ok: true, updatedAt: updatedAt, workspaceName: workspaceName, structuredSync: true, schemaVersion: 17, menuItemCount: (data.menuItems || []).length });
 }
 
 function load_() {
@@ -346,7 +366,7 @@ function load_() {
     workspaceName: getMeta_(metaSheet, 'workspaceName') || ss.getName(),
     source: source,
     structuredSync: true,
-    schemaVersion: 16
+    schemaVersion: 17
   });
 }
 

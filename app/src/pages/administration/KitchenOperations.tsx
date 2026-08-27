@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useSeatServe } from "../../state/SeatServeContext";
 import type { Order, OrderStatus, Runner } from "../../types/domain";
-import { getSyncMeta, pullFromGoogleSheets, type SyncMeta } from "../../services/persistence";
+import { getSyncMeta, pullFromGoogleSheets, updateOrderStatusLive, type SyncMeta } from "../../services/persistence";
 import "./KitchenOperations.css";
 
 const FLOW: Array<{ status: OrderStatus; label: string }> = [
@@ -57,7 +57,7 @@ function KitchenDashboardHeader({ onRefresh, syncMeta, isSyncing, keepAwake, wak
 }
 
 export default function KitchenOperations() {
-    const { data, replaceData, activeEvent, updateOrderStatus, assignRunnerToOrder, autoAssignRunner, cancelOrder, refreshLiveOperationalData } = useSeatServe();
+    const { data, replaceData, activeEvent, mergeRemoteOrder, assignRunnerToOrder, autoAssignRunner, cancelOrder, refreshLiveOperationalData } = useSeatServe();
     const [query, setQuery] = useState("");
     const [zoneFilter, setZoneFilter] = useState("all");
     const [selectedOrderId, setSelectedOrderId] = useState<string>();
@@ -156,6 +156,13 @@ export default function KitchenOperations() {
     const zoneName = useCallback((order: Order) => zones.find((zone) => zone.id === order.location?.zoneId)?.name ?? "Unknown zone", [zones]);
     const runnerFor = useCallback((order: Order) => runners.find((runner) => runner.id === order.runnerId), [runners]);
 
+    const setStatusConfirmed = async (orderId: string, status: OrderStatus) => {
+        setNotice(`Saving ${status}...`);
+        try { const result = await updateOrderStatusLive(orderId, status); if (result.order) mergeRemoteOrder(result.order); setNotice(`Order ${orderId}: ${status} saved.`); }
+        catch (error) { setNotice(`Failed: ${error instanceof Error ? error.message : "Order update failed."}`); }
+        finally { }
+    };
+
     const eventOrders = useMemo(() => {
         if (!activeEvent) return [];
         const needle = query.trim().toLowerCase();
@@ -235,7 +242,7 @@ export default function KitchenOperations() {
                                         runner={runnerFor(order)}
                                         selected={selectedOrder?.id === order.id}
                                         onSelect={() => setSelectedOrderId(order.id)}
-                                        onAccept={() => updateOrderStatus(order.id, "preparing")}
+                                        onAccept={() => void setStatusConfirmed(order.id, "preparing")}
                                         onAssign={() => autoAssignRunner(order.id)}
                                     />
                                 ))}
@@ -256,7 +263,7 @@ export default function KitchenOperations() {
                     runner={runnerFor(selectedOrder)}
                     runners={runners}
                     onClose={() => setSelectedOrderId(undefined)}
-                    onStatus={(status) => updateOrderStatus(selectedOrder.id, status)}
+                    onStatus={(status) => void setStatusConfirmed(selectedOrder.id, status)}
                     onAssign={(runnerId) => assignRunnerToOrder(selectedOrder.id, runnerId)}
                     onAutoAssign={() => autoAssignRunner(selectedOrder.id)}
                     onCancel={() => cancelOrder(selectedOrder.id)}

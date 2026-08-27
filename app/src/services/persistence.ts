@@ -440,6 +440,21 @@ export async function pushLiveGoogleSheets(data: SeatServeData): Promise<RemoteE
     }
 }
 
+
+export async function updateOrderStatusLive(orderId: string, status: string): Promise<RemoteEnvelope & { order?: import("../types/domain").Order }> {
+    const config = requireEndpoint();
+    const response = await fetch(config.endpointUrl.trim(), { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "orderStatus", workspaceName: config.workspaceName, orderId, status }) });
+    const result = await parseResponse(response) as RemoteEnvelope & { order?: import("../types/domain").Order };
+    if (!result.ok) throw new Error(result.message ?? "Order status update failed.");
+    return result;
+}
+
+export async function loadCustomerBootstrap(): Promise<RemoteEnvelope> {
+    const config = requireEndpoint();
+    const sep = config.endpointUrl.includes("?") ? "&" : "?";
+    const response = await fetch(`${config.endpointUrl.trim()}${sep}action=bootstrap&workspace=${encodeURIComponent(config.workspaceName)}&cacheBust=${Date.now()}`, { cache: "no-store" });
+    return parseResponse(response);
+}
 export async function assignRunnerLive(orderId: string, runnerId?: string): Promise<RemoteEnvelope> {
     const config = requireEndpoint();
     const response = await fetch(config.endpointUrl.trim(), {
