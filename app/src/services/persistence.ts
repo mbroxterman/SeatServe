@@ -1,4 +1,4 @@
-import type { SeatServeData } from "../types/domain";
+import type { Order, SeatServeData } from "../types/domain";
 
 export const LEGACY_DATA_STORAGE_KEY = "seatserve.core.v2";
 export const WORKSPACE_REGISTRY_KEY = "seatserve.workspaces.v1";
@@ -60,6 +60,16 @@ export interface LiveRemoteEnvelope {
     runners?: SeatServeData["runners"];
     feedback?: SeatServeData["feedback"];
   };
+}
+
+
+export interface LiveOrderRemoteEnvelope {
+  ok: boolean;
+  updatedAt?: string;
+  workspaceName?: string;
+  schemaVersion?: number;
+  message?: string;
+  order?: Order;
 }
 
 export interface RemoteEnvelope {
@@ -392,7 +402,7 @@ export async function pushToGoogleSheets(data: SeatServeData, force = false): Pr
             return result;
         }
         if (!result.ok) throw new Error(result.message ?? "Google Sheets sync failed.");
-        if (result.schemaVersion !== undefined && result.schemaVersion < 10) throw new Error("Google Apps Script is out of date. Replace Code.gs with the v2.1.7B version and redeploy a new web-app version.");
+        if (result.schemaVersion !== undefined && result.schemaVersion < 11) throw new Error("Google Apps Script is out of date. Replace Code.gs with the v2.1.7C version and redeploy a new web-app version.");
         if (result.menuItemCount !== undefined && result.menuItemCount !== data.menuItems.length) throw new Error(`Google Sheets saved ${result.menuItemCount} menu items, but SeatServe sent ${data.menuItems.length}. Please redeploy Code.gs and try Sync now again.`);
 
         const now = new Date().toISOString();
@@ -419,6 +429,21 @@ export async function pollLiveGoogleSheets(): Promise<LiveRemoteEnvelope> {
         return result;
     } catch (error) {
         return { ok: false, message: error instanceof Error ? error.message : "Live sync failed." };
+    }
+}
+
+export async function pollLiveOrder(orderId: string): Promise<LiveOrderRemoteEnvelope> {
+    const config = requireEndpoint();
+    if (!orderId.trim()) return { ok: false, message: "Order ID is required." };
+    try {
+        const separator = config.endpointUrl.includes("?") ? "&" : "?";
+        const response = await fetch(`${config.endpointUrl.trim()}${separator}action=order&orderId=${encodeURIComponent(orderId)}&workspace=${encodeURIComponent(config.workspaceName)}&cacheBust=${Date.now()}`, { cache: "no-store" });
+        const text = await response.text();
+        const result = JSON.parse(text) as LiveOrderRemoteEnvelope;
+        if (!response.ok || !result.ok) throw new Error(result.message ?? `Order sync failed (HTTP ${response.status}).`);
+        return result;
+    } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : "Order sync failed." };
     }
 }
 

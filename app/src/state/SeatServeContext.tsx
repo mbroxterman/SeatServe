@@ -1,5 +1,5 @@
 // File location: /src/state/SeatServeContext.tsx
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { seedData } from "../data/seed";
 import {
     createLocalBackup,
@@ -94,6 +94,7 @@ interface SeatServeContextValue {
     updateStaffAccess: (settings: StaffAccessSettings) => void;
     submitCustomerFeedback: (feedback: Omit<CustomerFeedback, "id" | "submittedAt">) => void;
     replaceData: (next: SeatServeData, reason?: string) => void;
+    mergeRemoteOrder: (order: Order) => void;
     updateReportingData: (next: SeatServeData, reason?: string) => void;
     resetDemoData: () => void;
     repairWorkspaceData: () => void;
@@ -220,6 +221,20 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
             activity: [activity(reason, "success"), ...(next.activity ?? [])].slice(0, 20),
         }));
     };
+
+    const mergeRemoteOrder = useCallback((order: Order) => {
+        setData((current) => {
+            const existing = current.orders.find((item) => item.id === order.id);
+            if (existing && JSON.stringify(existing) === JSON.stringify(order)) return current;
+            replacingDataRef.current = true;
+            return {
+                ...current,
+                orders: existing
+                    ? current.orders.map((item) => item.id === order.id ? order : item)
+                    : [order, ...current.orders],
+            };
+        });
+    }, []);
 
     // --- LIVE MULTI-DEVICE SYNC ---
     // Orders, runner state, event ordering state, feedback, and SeatBeacon need to move
@@ -991,7 +1006,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
 
     const getCurrentDataSnapshot = () => currentDataRef.current;
 
-    return <SeatServeContext.Provider value={{ data, getCurrentDataSnapshot, activeEvent, addEvent, updateEvent, duplicateEvent, deleteEvent, startEvent, completeEvent, setOrderingEnabled, placeOrder, updateOrderStatus, markOrderPaymentCollected, requestSeatBeacon, markSeatBeaconOpened, markCustomerLocated, assignRunnerToOrder, autoAssignRunner, markRunnerAvailable, cancelOrder, addRunner, updateRunner, duplicateRunner, deleteRunner, setRunnerStatus, addMenuItem, updateMenuItem, duplicateMenuItem, deleteMenuItem, addMenuCategory, updateMenuCategory, reorderMenuCategories, reorderMenuItems, deleteMenuCategory, addMenu, updateMenu, deleteMenu, assignMenuToEvent, addVenue, updateVenue, duplicateVenue, deleteVenue, addZone, updateZone, duplicateZone, deleteZone, addSection, updateSection, deleteSection, updateCustomerExperience, updateStaffAccess, submitCustomerFeedback, replaceData, updateReportingData, resetDemoData, repairWorkspaceData }}>{children}</SeatServeContext.Provider>;
+    return <SeatServeContext.Provider value={{ data, getCurrentDataSnapshot, activeEvent, addEvent, updateEvent, duplicateEvent, deleteEvent, startEvent, completeEvent, setOrderingEnabled, placeOrder, updateOrderStatus, markOrderPaymentCollected, requestSeatBeacon, markSeatBeaconOpened, markCustomerLocated, assignRunnerToOrder, autoAssignRunner, markRunnerAvailable, cancelOrder, addRunner, updateRunner, duplicateRunner, deleteRunner, setRunnerStatus, addMenuItem, updateMenuItem, duplicateMenuItem, deleteMenuItem, addMenuCategory, updateMenuCategory, reorderMenuCategories, reorderMenuItems, deleteMenuCategory, addMenu, updateMenu, deleteMenu, assignMenuToEvent, addVenue, updateVenue, duplicateVenue, deleteVenue, addZone, updateZone, duplicateZone, deleteZone, addSection, updateSection, deleteSection, updateCustomerExperience, updateStaffAccess, submitCustomerFeedback, replaceData, mergeRemoteOrder, updateReportingData, resetDemoData, repairWorkspaceData }}>{children}</SeatServeContext.Provider>;
 }
 
 export function useSeatServe() {

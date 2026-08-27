@@ -213,6 +213,19 @@ export default function CustomerOrder() {
                 snapshot.orders.push(newOrder);
             }
 
+            // Preserve a customer-session copy so tracking never loses the order while
+            // another device/cloud refresh is catching up. Phone number is intentionally
+            // excluded from this temporary browser-session copy.
+            const trackingOrder = snapshot.orders.find(o => o.id === orderId);
+            if (trackingOrder) {
+                try {
+                    sessionStorage.setItem(`seatserve.customer.order.${orderId}`, JSON.stringify({
+                        ...trackingOrder,
+                        customer: { ...trackingOrder.customer, mobile: undefined },
+                    }));
+                } catch { /* session storage is only a fallback */ }
+            }
+
             // FORCE INSTANT PUSH TO CLOUD
             await pushToGoogleSheets(snapshot, true);
         } catch (error) {

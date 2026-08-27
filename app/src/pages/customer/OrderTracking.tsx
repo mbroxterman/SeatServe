@@ -2,6 +2,8 @@ import { Banknote, Check, Clock3, CreditCard, MapPin, PackageCheck, Star, X } fr
 import { Link, useParams } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSeatServe } from "../../state/SeatServeContext";
+import { pollLiveOrder } from "../../services/persistence";
+import type { Order } from "../../types/domain";
 import "./CustomerOrder.css";
 
 const steps = ["new", "preparing", "ready", "assigned", "delivering", "delivered"] as const;
@@ -17,8 +19,18 @@ const statusCopy = {
 
 export default function OrderTracking() {
   const { orderId } = useParams();
-  const { data, submitCustomerFeedback, markSeatBeaconOpened } = useSeatServe();
-  const order = data.orders.find((item) => item.id === orderId);
+  const { data, submitCustomerFeedback, markSeatBeaconOpened, mergeRemoteOrder } = useSeatServe();
+  const contextOrder = data.orders.find((item) => item.id === orderId);
+  const readCachedOrder = (): Order | undefined => {
+    if (!orderId) return undefined;
+    try {
+      const raw = sessionStorage.getItem(`seatserve.customer.order.${orderId}`);
+      return raw ? JSON.parse(raw) as Order : undefined;
+    } catch { return undefined; }
+  };
+  const [trackedOrder, setTrackedOrder] = useState<Order | undefined>(() => contextOrder ?? readCachedOrder());
+  const [trackingReady, setTrackingReady] = useState(Boolean(contextOrder ?? readCachedOrder()));
+  const order = contextOrder ?? trackedOrder;
   const [beaconActive, setBeaconActive] = useState(false);
   const [rating, setRating] = useState(0);
   const [comments, setComments] = useState("");
@@ -29,7 +41,64 @@ export default function OrderTracking() {
   const priorFeedback = useMemo(() => data.feedback.find((item) => item.orderId === orderId), [data.feedback, orderId]);
 
   useEffect(() => {
+    if (!contextOrder || !orderId) return;
+    setTrackedOrder(contextOrder);
+    setTrackingReady(true);
+    try {
+      sessionStorage.setItem(`seatserve.customer.order.${orderId}`, JSON.stringify({
+        ...contextOrder,
+        customer: { ...contextOrder.customer, mobile: undefined },
+      }));
+    } catch { /* session cache is best-effort */ }
+  }, [contextOrder, orderId]);
+
+  useEffect(() => {
+    if (!orderId) { setTrackingReady(true); return; }
+    let cancelled = false;
+    let inFlight = false;
+
+    const refreshOrder = async () => {
+      if (cancelled || inFlight || !navigator.onLine || document.visibilityState !== "visible") return;
+      inFlight = true;
+      try {
+        const result = await pollLiveOrder(orderId);
+        if (cancelled) return;
+        if (result.ok && result.order) {
+          setTrackedOrder(result.order);
+          mergeRemoteOrder(result.order);
+          try {
+            sessionStorage.setItem(`seatserve.customer.order.${orderId}`, JSON.stringify({
+              ...result.order,
+              customer: { ...result.order.customer, mobile: undefined },
+            }));
+          } catch { /* session cache is best-effort */ }
+        }
+      } finally {
+        if (!cancelled) setTrackingReady(true);
+        inFlight = false;
+      }
+    };
+
+    void refreshOrder();
+    const timer = window.setInterval(() => void refreshOrder(), 2000);
+    const onVisible = () => { if (document.visibilityState === "visible") void refreshOrder(); };
+    const onFocus = () => void refreshOrder();
+    const onOnline = () => void refreshOrder();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("online", onOnline);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("online", onOnline);
+    };
+  }, [orderId, mergeRemoteOrder]);
+
+  useEffect(() => {
     if (order?.status === "delivered") {
+      if (orderId) { try { sessionStorage.removeItem(`seatserve.customer.order.${orderId}`); } catch { /* ignore */ } }
       setBeaconActive(false);
       if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate(0);
     }
@@ -73,7 +142,8 @@ export default function OrderTracking() {
     };
   }, [beaconActive, vibrationEnabled]);
 
-  if (!order) return <div className="customer-message"><h1>Order not found</h1><p>Check the order number and try again.</p><Link to="/">Return to SeatServe</Link></div>;
+  if (!order && !trackingReady) return <div className="customer-message"><h1>Finding your order...</h1><p>Connecting to the live SeatServe order status.</p></div>;
+  if (!order) return <div className="customer-message"><h1>Order not found</h1><p>We could not find this order in the live system. Please show your order number at the concession stand if you need help.</p><Link to="/">Return to SeatServe</Link></div>;
 
   const event = data.events.find((item) => item.id === order.eventId);
   const venue = data.venues.find((item) => item.id === order.location.venueId);

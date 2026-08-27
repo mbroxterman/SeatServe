@@ -1,0 +1,11 @@
+SeatServe v2.1.7C - Customer Live Tracking Fix
+
+1. Replace your current SeatServe project with the included SeatServe folder.
+2. From SeatServe\app run: npm install, then npm run build.
+3. Replace Google Apps Script Code.gs with app\google-apps-script\Code.gs.
+4. Deploy a NEW VERSION of the existing Apps Script web app deployment.
+5. Test Connection in Administration > Settings. Apps Script schema must report v11.
+6. Sync Now once from the main Admin device.
+7. Test with separate Customer, Kitchen, and Runner devices WITHOUT pressing Load from Sheets or refreshing.
+
+Key fix: Customer tracking keeps a temporary session copy of the placed order and polls that exact order every 2 seconds. A whole-workspace/live refresh can no longer make a valid active customer order disappear. SeatBeacon and delivery status are received through the same order-specific live channel.
