@@ -31,12 +31,11 @@ function KitchenDashboardHeader({ onRefresh, syncMeta, isSyncing, keepAwake, wak
     const lastSync = syncMeta.lastSuccessfulSyncAt ? new Date(syncMeta.lastSuccessfulSyncAt).toLocaleString() : "never";
     return (
         <header className="ko-header">
-            <div className="ko-header__main">
-                <div>
-                    <p className="ko-eyebrow">Administration</p>
-                    <h1>Kitchen Operations</h1>
-                </div>
+            <div className="ko-header__title">
+                <p className="ko-eyebrow">Administration</p>
+                <h1>Kitchen Operations</h1>
             </div>
+            {children}
             <div className="ko-header__sync">
                 <button onClick={onRefresh} disabled={isSyncing}>
                     <RefreshCw size={16} className={isSyncing ? "is-syncing" : ""} />
@@ -51,7 +50,6 @@ function KitchenDashboardHeader({ onRefresh, syncMeta, isSyncing, keepAwake, wak
                     <span>Last updated: {lastSync}</span>
                 </div>
             </div>
-            {children}
         </header>
     );
 }
