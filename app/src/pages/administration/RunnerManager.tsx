@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { useSeatServe } from "../../state/SeatServeContext";
 import type { Runner, RunnerStatus } from "../../types/domain";
+import { updateRunnerStatusLive } from "../../services/persistence";
 import "./RunnerManager.css";
 
 type RunnerDraft = Omit<Runner, "id" | "activeOrderId" | "completedDeliveries" | "rating">;
@@ -63,25 +64,15 @@ export default function RunnerManager() {
         if (!deleteRunner(runner.id)) setNotice("This runner has an active order and cannot be removed yet.");
     };
 
-    const forceAvailable = (runnerId: string) => {
-        if (!window.confirm("Force this runner to become available? This should only be used if the runner is stuck on a deleted or invalid order.")) return;
-        const runner = data.runners.find(r => r.id === runnerId);
-        if (!runner) {
-            setNotice("Could not find the runner to update.");
-            return;
+    const forceAvailable = async (runnerId: string) => {
+        if (!window.confirm("Clear this stale assignment and make the runner available? This will be blocked if Google still has an active delivery for the runner.")) return;
+        try {
+            const result = await updateRunnerStatusLive(runnerId, "available", true);
+            setNotice(result.message || "Stale assignment cleared and runner made available.");
+            window.setTimeout(() => window.location.reload(), 700);
+        } catch (error) {
+            setNotice(error instanceof Error ? `Recovery failed: ${error.message}` : "Runner recovery failed.");
         }
-        const updatedDraft: RunnerDraft = {
-            name: runner.name,
-            email: runner.email ?? "",
-            phone: runner.phone ?? "",
-            role: runner.role,
-            status: 'available',
-            active: runner.active,
-            venueId: runner.venueId,
-            zoneIds: runner.zoneIds ?? [],
-        };
-        updateRunner(runnerId, updatedDraft);
-        setNotice("Runner status has been reset to Available.");
     };
 
     return (
@@ -126,7 +117,8 @@ export default function RunnerManager() {
                 <div className="runner-grid">
                     {filteredRunners.map((runner) => {
                         const venue = data.venues.find((candidate) => candidate.id === runner.venueId);
-                        const isStuck = runner.activeOrderId && !data.orders.some(o => o.id === runner.activeOrderId);
+                        const linkedOrder = runner.activeOrderId ? data.orders.find(o => o.id === runner.activeOrderId) : undefined;
+                        const isStuck = Boolean(runner.activeOrderId && (!linkedOrder || !["assigned", "delivering"].includes(linkedOrder.status)));
                         return (
                             <article key={runner.id} className={`runner-card ${!runner.active ? "is-inactive" : ""} ${isStuck ? "is-stuck" : ""}`}>
                                 <div className="runner-card__top">
@@ -158,7 +150,7 @@ export default function RunnerManager() {
                                         <div className="runner-card__system-status is-error">
                                             <AlertTriangle size={16} />
                                             <span>Stuck on deleted order</span>
-                                            <button className="force-available-btn" onClick={() => forceAvailable(runner.id)}>Force Available</button>
+                                            <button className="force-available-btn" onClick={() => void forceAvailable(runner.id)}>Force Available</button>
                                         </div>
                                     ) : runner.activeOrderId || runner.status === "assigned" || runner.status === "returning" ? (
                                         <div className="runner-card__system-status">{statusLabel[runner.status]} · controlled by the active delivery</div>

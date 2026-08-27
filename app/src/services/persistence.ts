@@ -464,6 +464,31 @@ export async function autoAssignRunnerLive(orderId: string): Promise<RemoteEnvel
     return result;
 }
 
+
+export async function updateRunnerStatusLive(runnerId: string, status: "available" | "offline", clearAssignment = false): Promise<RemoteEnvelope> {
+    const config = requireEndpoint();
+    const response = await fetch(config.endpointUrl.trim(), {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "runnerStatus", workspaceName: config.workspaceName, runnerId, status, clearAssignment }),
+    });
+    const result = await parseResponse(response);
+    if (!result.ok) throw new Error(result.message ?? "Runner status update failed.");
+    return result;
+}
+
+export async function updateSeatBeaconLive(orderId: string, action: "request" | "opened" | "located"): Promise<RemoteEnvelope> {
+    const config = requireEndpoint();
+    const response = await fetch(config.endpointUrl.trim(), {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "seatBeacon", workspaceName: config.workspaceName, orderId, beaconAction: action }),
+    });
+    const result = await parseResponse(response);
+    if (!result.ok) throw new Error(result.message ?? "SeatBeacon update failed.");
+    return result;
+}
+
 export async function pollLiveGoogleSheets(): Promise<LiveRemoteEnvelope> {
     const config = requireEndpoint();
     try {

@@ -89,7 +89,7 @@ export default function OrderTracking() {
     };
 
     void refreshOrder();
-    const timer = window.setInterval(() => void refreshOrder(), 2000);
+    const timer = window.setInterval(() => void refreshOrder(), order?.status === "delivering" ? 1000 : 2000);
     const onVisible = () => { if (document.visibilityState === "visible") void refreshOrder(); };
     const onFocus = () => void refreshOrder();
     const onOnline = () => void refreshOrder();

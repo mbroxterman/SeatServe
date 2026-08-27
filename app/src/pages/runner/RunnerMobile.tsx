@@ -45,7 +45,7 @@ export default function RunnerMobile() {
       try { await refreshLiveOperationalData(); } catch (error) { console.error("Runner live refresh failed", error); }
     };
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 3000);
+    const timer = window.setInterval(() => void refresh(), 1500);
     const onFocus = () => void refresh();
     const onVisible = () => { if (document.visibilityState === "visible") void refresh(); };
     window.addEventListener("focus", onFocus);

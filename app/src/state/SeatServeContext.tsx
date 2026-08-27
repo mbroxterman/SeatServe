@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { seedData } from "../data/seed";
 import {
     assignRunnerLive,
-    autoAssignRunnerLive,
+    autoAssignRunnerLive, updateRunnerStatusLive, updateSeatBeaconLive,
     createLocalBackup,
     getActiveDataStorageKey,
     getActiveWorkspaceId,
@@ -647,19 +647,25 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
         });
     };
 
-    const requestSeatBeacon = (orderId: string) => setData((current) => {
-        const order = current.orders.find((item) => item.id === orderId);
-        if (!order || order.status !== "delivering") return current;
-        const now = new Date().toISOString();
-        return { ...current, orders: current.orders.map((item) => item.id === orderId ? { ...item, seatBeaconRequestedAt: now } : item), activity: pushActivity(current, `SeatBeacon requested for order ${orderId}`, "info") };
-    });
+    const requestSeatBeacon = (orderId: string) => {
+        setData((current) => {
+            const order = current.orders.find((item) => item.id === orderId);
+            if (!order || order.status !== "delivering") return current;
+            const now = new Date().toISOString();
+            return { ...current, orders: current.orders.map((item) => item.id === orderId ? { ...item, seatBeaconRequestedAt: now } : item), activity: pushActivity(current, `SeatBeacon requested for order ${orderId}`, "info") };
+        });
+        if (isDeploymentManagedSync() && navigator.onLine) void updateSeatBeaconLive(orderId, "request").then(() => refreshLiveOperationalData()).catch((error) => window.dispatchEvent(new CustomEvent("seatserve:operation-notice", { detail: { message: `SeatBeacon request failed: ${error instanceof Error ? error.message : "Unknown error"}`, tone: "error" } })));
+    };
 
-    const markSeatBeaconOpened = (orderId: string) => setData((current) => {
-        const order = current.orders.find((item) => item.id === orderId);
-        if (!order || order.seatBeaconOpenedAt) return current;
-        const now = new Date().toISOString();
-        return { ...current, orders: current.orders.map((item) => item.id === orderId ? { ...item, seatBeaconOpenedAt: now } : item), activity: pushActivity(current, `SeatBeacon activated for order ${orderId}`, "success") };
-    });
+    const markSeatBeaconOpened = (orderId: string) => {
+        setData((current) => {
+            const order = current.orders.find((item) => item.id === orderId);
+            if (!order || order.seatBeaconOpenedAt || order.status === "delivered") return current;
+            const now = new Date().toISOString();
+            return { ...current, orders: current.orders.map((item) => item.id === orderId ? { ...item, seatBeaconOpenedAt: now } : item), activity: pushActivity(current, `SeatBeacon activated for order ${orderId}`, "success") };
+        });
+        if (isDeploymentManagedSync() && navigator.onLine) void updateSeatBeaconLive(orderId, "opened").catch(() => undefined);
+    };
 
     const markCustomerLocated = (orderId: string) => setData((current) => {
         const order = current.orders.find((item) => item.id === orderId);
@@ -826,26 +832,17 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
         setData((current) => ({ ...current, runners: current.runners.filter((runner) => runner.id !== runnerId), activity: pushActivity(current, "Runner removed", "warning") }));
         return true;
     };
-    const setRunnerStatus = (runnerId: string, status: RunnerStatus) => setData((current) => {
-        const runner = current.runners.find((item) => item.id === runnerId);
-        if (!runner) return current;
-        if (status !== "available" && status !== "offline") {
-            return { ...current, activity: pushActivity(current, "Busy and Returning runner states are controlled by active deliveries", "warning") };
-        }
-        if (runner.activeOrderId || runner.status === "assigned" || runner.status === "returning") {
-            return { ...current, activity: pushActivity(current, `${runner.name} cannot change availability while an order is active`, "warning") };
-        }
-        const now = new Date().toISOString();
-        return {
-            ...current,
-            runners: current.runners.map((item) => item.id === runnerId ? {
-                ...item,
-                status,
-                availableSince: status === "available" ? now : undefined,
-            } : item),
-            activity: pushActivity(current, `Runner status changed to ${status}`, "info"),
-        };
-    });
+    const setRunnerStatus = (runnerId: string, status: RunnerStatus) => {
+        if (status !== "available" && status !== "offline") return;
+        setData((current) => {
+            const runner = current.runners.find((item) => item.id === runnerId);
+            if (!runner) return current;
+            if (runner.activeOrderId || runner.status === "assigned" || runner.status === "returning") return { ...current, activity: pushActivity(current, `${runner.name} cannot change availability while an order is active`, "warning") };
+            const now = new Date().toISOString();
+            return { ...current, runners: current.runners.map((item) => item.id === runnerId ? { ...item, status, availableSince: status === "available" ? now : undefined } : item), activity: pushActivity(current, `Runner status changed to ${status}`, "info") };
+        });
+        if (isDeploymentManagedSync() && navigator.onLine) void updateRunnerStatusLive(runnerId, status).then(() => refreshLiveOperationalData()).catch((error) => window.dispatchEvent(new CustomEvent("seatserve:operation-notice", { detail: { message: `Runner status failed: ${error instanceof Error ? error.message : "Unknown error"}`, tone: "error" } })));
+    };
 
     const addMenuItem = (draft: MenuItemDraft) => {
         const id = crypto.randomUUID();
