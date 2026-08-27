@@ -449,6 +449,14 @@ export async function updateOrderStatusLive(orderId: string, status: string): Pr
     return result;
 }
 
+export async function markPaymentCollectedLive(orderId: string): Promise<RemoteEnvelope & { order?: import("../types/domain").Order }> {
+    const config = requireEndpoint();
+    const response = await fetch(config.endpointUrl.trim(), { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "markPaymentCollected", workspaceName: config.workspaceName, orderId }) });
+    const result = await parseResponse(response) as RemoteEnvelope & { order?: import("../types/domain").Order };
+    if (!result.ok) throw new Error(result.message ?? "Payment confirmation failed.");
+    return result;
+}
+
 export async function loadCustomerBootstrap(): Promise<RemoteEnvelope> {
     const config = requireEndpoint();
     const sep = config.endpointUrl.includes("?") ? "&" : "?";

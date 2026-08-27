@@ -11,6 +11,7 @@ import {
     getSyncMeta,
     isDeploymentManagedSync,
     markLocalChange,
+    markPaymentCollectedLive,
     markRunnerAvailableLive,
     pollGoogleSheets,
     pollLiveGoogleSheets,
@@ -643,17 +644,24 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
 
 
     const markOrderPaymentCollected = (orderId: string) => {
+        let applied = false;
         setData((current) => {
             const order = current.orders.find((item) => item.id === orderId);
             if (!order || order.paymentCollectedAt) return current;
             const now = new Date().toISOString();
             const methodLabel = order.paymentMethod === "card" ? "card payment" : "exact cash payment";
+            applied = true;
             return {
                 ...current,
                 orders: current.orders.map((item) => item.id === orderId ? { ...item, paymentCollectedAt: now } : item),
                 activity: pushActivity(current, `${methodLabel} collected for order ${orderId}`, "success"),
             };
         });
+        // Push immediately instead of waiting on the debounced background autosync -
+        // otherwise a poll landing in that window can momentarily overwrite the local
+        // optimistic update with the still-unconfirmed server copy, making the
+        // payment button flicker between "Confirm payment" and "Payment collected".
+        if (applied && isDeploymentManagedSync() && navigator.onLine) void markPaymentCollectedLive(orderId).then((result) => { if (result.order) mergeRemoteOrder(result.order); }).then(() => refreshLiveOperationalData()).catch((error) => window.dispatchEvent(new CustomEvent("seatserve:operation-notice", { detail: { message: `Payment confirmation failed: ${error instanceof Error ? error.message : "Unknown error"}`, tone: "error" } })));
     };
 
     const requestSeatBeacon = (orderId: string) => {
@@ -676,12 +684,15 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
         if (isDeploymentManagedSync() && navigator.onLine) void updateSeatBeaconLive(orderId, "opened").catch(() => undefined);
     };
 
-    const markCustomerLocated = (orderId: string) => setData((current) => {
-        const order = current.orders.find((item) => item.id === orderId);
-        if (!order || order.status !== "delivering" || order.customerLocatedAt) return current;
-        const now = new Date().toISOString();
-        return { ...current, orders: current.orders.map((item) => item.id === orderId ? { ...item, customerLocatedAt: now } : item), activity: pushActivity(current, `Customer located for order ${orderId}`, "success") };
-    });
+    const markCustomerLocated = (orderId: string) => {
+        setData((current) => {
+            const order = current.orders.find((item) => item.id === orderId);
+            if (!order || order.status !== "delivering" || order.customerLocatedAt) return current;
+            const now = new Date().toISOString();
+            return { ...current, orders: current.orders.map((item) => item.id === orderId ? { ...item, customerLocatedAt: now } : item), activity: pushActivity(current, `Customer located for order ${orderId}`, "success") };
+        });
+        if (isDeploymentManagedSync() && navigator.onLine) void updateSeatBeaconLive(orderId, "located").then(() => refreshLiveOperationalData()).catch((error) => window.dispatchEvent(new CustomEvent("seatserve:operation-notice", { detail: { message: `Customer located update failed: ${error instanceof Error ? error.message : "Unknown error"}`, tone: "error" } })));
+    };
 
     const getZoneEstimate = (current: SeatServeData, order: Order) => {
         const zone = current.venues.find((venue) => venue.id === order.location.venueId)?.zones.find((item) => item.id === order.location.zoneId);

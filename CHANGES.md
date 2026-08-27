@@ -14,9 +14,12 @@ Manage deployments → Edit → New version → Deploy).
   at the kitchen" only updated the runner's own phone locally and never told
   Google Sheets - so other screens could keep showing that runner as unavailable
   indefinitely. Now it's a real, immediate server action.
+- Added a new `markPaymentCollected` backend action (see OrderTracking entry
+  below for why).
 
 ## app/src/services/persistence.ts
 - Added `markRunnerAvailableLive()` to call the new backend action above.
+- Added `markPaymentCollectedLive()` for the payment-button fix below.
 
 ## app/src/state/SeatServeContext.tsx
 - `updateOrderStatus` now pushes the order status to Google Sheets immediately
@@ -25,6 +28,14 @@ Manage deployments → Edit → New version → Deploy).
 - `markRunnerAvailable` now pushes the outcome (available, or reassigned to a
   queued order) to Google Sheets immediately, fixing the "runner stuck showing
   unavailable" bug.
+- `markOrderPaymentCollected` (the "Confirm cash/card payment" button in Runner
+  Mobile) now pushes to Google Sheets immediately. Before, it only updated the
+  device locally, so the automatic status poll could momentarily overwrite that
+  with the still-unconfirmed server copy - which is what caused the payment
+  button to flicker/flash between "Confirm payment" and "Payment collected"
+  right after tapping it.
+- `markCustomerLocated` ("Customer Located" button) had the exact same gap and
+  now pushes immediately too, using the existing SeatBeacon backend action.
 
 ## app/src/pages/customer/StableZoneEntry.tsx
 - Fixed a race condition on the QR-scan landing page where, on a fresh phone/

@@ -47,6 +47,7 @@ function doPost(e) {
     if (request.action === 'autoAssignRunner') return autoAssignRunner_(request);
     if (request.action === 'runnerStatus') return runnerStatus_(request);
     if (request.action === 'markRunnerAvailable') return markRunnerAvailable_(request);
+    if (request.action === 'markPaymentCollected') return markPaymentCollected_(request);
     if (request.action === 'seatBeacon') return seatBeacon_(request);
     if (request.action === 'orderStatus') return orderStatus_(request);
     return json_({ ok: false, message: 'Unsupported action.' });
@@ -287,6 +288,41 @@ function markRunnerAvailable_(request) {
     setMeta_(metaSheet, 'lastWriteSource', 'SeatServe atomic runner return');
     SpreadsheetApp.flush();
     return json_({ ok:true, message:(runner.name || 'Runner') + ' returned and is available.', runnerId:runnerId, updatedAt:now, workspaceName:getMeta_(metaSheet,'workspaceName') || ss.getName(), schemaVersion:16 });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Runner tapping "Confirm cash received" / "Confirm card payment". Previously
+// this only ever updated local state and relied on the slow, debounced
+// background sync to reach Google Sheets - so a poll landing in that window
+// could momentarily overwrite the local optimistic update with the still-
+// unconfirmed server copy, making the payment button flicker between
+// "Confirm payment" and "Payment collected". This makes it atomic and
+// immediate, the same way SeatBeacon and order status changes already work.
+function markPaymentCollected_(request) {
+  const orderId = String(request.orderId || '');
+  if (!orderId) return json_({ ok:false, message:'Order ID is required.', schemaVersion:16 });
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const ss = getSpreadsheet_();
+    const metaSheet = getOrCreate_(ss, META_SHEET, ['key','value']);
+    const current = restoreActiveContacts_(readLiveOnly_(ss));
+    const order = (current.orders || []).find(function(o) { return o.id === orderId; });
+    if (!order) return json_({ ok:false, message:'Order was not found.', schemaVersion:16 });
+    const now = new Date().toISOString();
+    if (!order.paymentCollectedAt) {
+      order.paymentCollectedAt = now;
+      storeActiveContacts_(current.orders || []);
+      const data = sanitizeForSheets_(current);
+      writeLiveOnly_(ss, data);
+      setMeta_(metaSheet, 'updatedAt', now);
+      setMeta_(metaSheet, 'schemaVersion', '17');
+      setMeta_(metaSheet, 'lastWriteSource', 'SeatServe atomic payment collected');
+      SpreadsheetApp.flush();
+    }
+    return json_({ ok:true, message:'Payment marked collected.', order:order, updatedAt:order.paymentCollectedAt, schemaVersion:16 });
   } finally {
     lock.releaseLock();
   }
