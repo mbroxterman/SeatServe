@@ -27,7 +27,7 @@ import "./RunnerMobile.css";
 
 export default function RunnerMobile() {
   const { runnerId } = useParams();
-  const { data, replaceData, activeEvent, updateOrderStatus, markOrderPaymentCollected, requestSeatBeacon, markCustomerLocated, markRunnerAvailable, setRunnerStatus } = useSeatServe();
+  const { data, replaceData, activeEvent, updateOrderStatus, markOrderPaymentCollected, requestSeatBeacon, markCustomerLocated, markRunnerAvailable, setRunnerStatus, refreshLiveOperationalData } = useSeatServe();
   const [syncMeta, setSyncMeta] = useState<SyncMeta>(() => getSyncMeta());
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncNotice, setSyncNotice] = useState("");
@@ -37,6 +37,21 @@ export default function RunnerMobile() {
     window.addEventListener("seatserve:sync-meta", metaHandler);
     return () => window.removeEventListener("seatserve:sync-meta", metaHandler);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      if (cancelled || document.visibilityState !== "visible" || !navigator.onLine) return;
+      try { await refreshLiveOperationalData(); } catch (error) { console.error("Runner live refresh failed", error); }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 3000);
+    const onFocus = () => void refresh();
+    const onVisible = () => { if (document.visibilityState === "visible") void refresh(); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { cancelled = true; window.clearInterval(timer); window.removeEventListener("focus", onFocus); document.removeEventListener("visibilitychange", onVisible); };
+  }, [refreshLiveOperationalData]);
 
   const loadLatest = async () => {
     setIsSyncing(true);

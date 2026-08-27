@@ -1,30 +1,27 @@
-SeatServe v2.1.7E - Corrected Client Patch
-
-Baseline: uploaded SeatServe(5).zip (client v2.1.7D, Apps Script schema v13)
+SeatServe v2.1.7F - Kitchen Live Sync & Runner Assignment Patch
+Expected client version: v2.1.7F
+Expected Apps Script schema: v14
 
 Changed files:
-- app/src/state/SeatServeContext.tsx
-- app/src/layouts/AdminLayout.tsx
+app/src/services/persistence.ts
+app/src/state/SeatServeContext.tsx
+app/src/pages/administration/KitchenOperations.tsx
+app/src/pages/runner/RunnerMobile.tsx
+app/src/layouts/AdminLayout.tsx
+app/google-apps-script/Code.gs
 
-Fixes:
-- Reconciles live polling responses against the latest React state at apply time.
-- Prevents an older in-flight Kitchen/Runner poll from visually undoing a newer local status action.
-- Keeps forward-only order status reconciliation already present in v2.1.7D.
-- Retains Customer order-specific polling and Delivered SeatBeacon shutdown already present in the uploaded baseline.
-- Updates visible client version to v2.1.7E.
+Changes:
+- Kitchen explicitly refreshes live operational data on open, every 3 seconds, focus, visibility return, and reconnect.
+- Runner Mobile explicitly refreshes live operational data every 3 seconds and on focus/visibility return.
+- Runner assignment uses a dedicated atomic Apps Script action instead of waiting for a whole live workspace save.
+- Auto Assign uses the same atomic runner assignment path.
+- Kitchen shows success/failure feedback for runner assignment.
+- Kitchen requests Screen Wake Lock by default where supported and provides a Keep Awake toggle/status.
+- Existing v2.1.7E order-state reconciliation is preserved.
 
-Google Apps Script:
-- NO Code.gs change is included in this corrected client patch.
-- Keep the currently deployed Apps Script schema v13.
-- No Apps Script redeployment is required if Test Connection already shows v13.
-
-Dependencies:
-- No npm install required.
-
-Verification after extraction:
-1. From C:\Users\mbroxte\Documents\SeatServe run: git status
-   Expected: the two client files above are modified.
-2. Run: Select-String -Path ".\app\src\layouts\AdminLayout.tsx" -Pattern "2.1.7E"
-3. Run: cd .\app ; npm run build
-4. Push to GitHub / allow Netlify to deploy.
-5. Test Connection should remain schema v13.
+Install:
+Extract this ZIP into C:\Users\mbroxte\Documents\SeatServe and replace matching files.
+No npm install is required.
+Run npm run build from the app folder before committing.
+Redeploy app/google-apps-script/Code.gs as a new version of the existing Apps Script web app.
+Test Connection should show schema v14.

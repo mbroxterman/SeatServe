@@ -1,7 +1,7 @@
 import {
     ArrowLeft, Banknote, Check, CheckCircle2, ChevronDown, ChevronUp, CreditCard, Clock3, ExternalLink, MapPin, PackageCheck, RefreshCw, Search, UserRound, X, Zap,
 } from "lucide-react";
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useSeatServe } from "../../state/SeatServeContext";
 import type { Order, OrderStatus, Runner } from "../../types/domain";
@@ -27,7 +27,7 @@ const elapsedLabel = (value?: string) => {
 const remainingMinutes = (value?: string) => value ? Math.max(0, Math.ceil((new Date(value).getTime() - Date.now()) / 60_000)) : 0;
 const statusStep = (status: OrderStatus) => status === "assigned" ? 3 : Math.max(0, FLOW.findIndex((item) => item.status === status));
 
-function KitchenDashboardHeader({ onRefresh, syncMeta, isSyncing, children }: { onRefresh: () => void; syncMeta: SyncMeta; isSyncing: boolean; children: React.ReactNode }) {
+function KitchenDashboardHeader({ onRefresh, syncMeta, isSyncing, keepAwake, wakeActive, onToggleAwake, children }: { onRefresh: () => void; syncMeta: SyncMeta; isSyncing: boolean; keepAwake: boolean; wakeActive: boolean; onToggleAwake: () => void; children: React.ReactNode }) {
     const lastSync = syncMeta.lastSuccessfulSyncAt ? new Date(syncMeta.lastSuccessfulSyncAt).toLocaleString() : "never";
     return (
         <header className="ko-header">
@@ -42,6 +42,10 @@ function KitchenDashboardHeader({ onRefresh, syncMeta, isSyncing, children }: { 
                     <RefreshCw size={16} className={isSyncing ? "is-syncing" : ""} />
                     {isSyncing ? "Loading..." : "Load from Sheets"}
                 </button>
+                <button type="button" onClick={onToggleAwake} title="Keep the Kitchen display awake during the event">
+                    <Zap size={16} />
+                    {keepAwake ? (wakeActive ? "Screen Awake" : "Keep Awake On") : "Keep Awake Off"}
+                </button>
                 <div className="sync-status">
                     <CheckCircle2 size={16} />
                     <span>Last updated: {lastSync}</span>
@@ -53,7 +57,7 @@ function KitchenDashboardHeader({ onRefresh, syncMeta, isSyncing, children }: { 
 }
 
 export default function KitchenOperations() {
-    const { data, replaceData, activeEvent, updateOrderStatus, assignRunnerToOrder, autoAssignRunner, cancelOrder } = useSeatServe();
+    const { data, replaceData, activeEvent, updateOrderStatus, assignRunnerToOrder, autoAssignRunner, cancelOrder, refreshLiveOperationalData } = useSeatServe();
     const [query, setQuery] = useState("");
     const [zoneFilter, setZoneFilter] = useState("all");
     const [selectedOrderId, setSelectedOrderId] = useState<string>();
@@ -63,6 +67,9 @@ export default function KitchenOperations() {
     const [syncMeta, setSyncMeta] = useState<SyncMeta>(() => getSyncMeta());
     const [isSyncing, setIsSyncing] = useState(false);
     const [notice, setNotice] = useState("");
+    const [keepAwake, setKeepAwake] = useState(true);
+    const [wakeActive, setWakeActive] = useState(false);
+    const wakeLockRef = useRef<{ release: () => Promise<void> } | null>(null);
 
     useEffect(() => {
         const timer = window.setInterval(() => setTick((value) => value + 1), 1000);
@@ -73,6 +80,52 @@ export default function KitchenOperations() {
         const metaHandler = (event: Event) => setSyncMeta((event as CustomEvent<SyncMeta>).detail ?? getSyncMeta());
         window.addEventListener("seatserve:sync-meta", metaHandler);
         return () => window.removeEventListener("seatserve:sync-meta", metaHandler);
+    }, []);
+
+    useEffect(() => {
+        let cancelled = false;
+        const refresh = async () => {
+            if (cancelled || document.visibilityState !== "visible" || !navigator.onLine) return;
+            try { await refreshLiveOperationalData(); } catch (error) { console.error("Kitchen live refresh failed", error); }
+        };
+        void refresh();
+        const timer = window.setInterval(() => void refresh(), 3000);
+        const onFocus = () => void refresh();
+        const onVisible = () => { if (document.visibilityState === "visible") void refresh(); };
+        const onOnline = () => void refresh();
+        window.addEventListener("focus", onFocus);
+        window.addEventListener("online", onOnline);
+        document.addEventListener("visibilitychange", onVisible);
+        return () => { cancelled = true; window.clearInterval(timer); window.removeEventListener("focus", onFocus); window.removeEventListener("online", onOnline); document.removeEventListener("visibilitychange", onVisible); };
+    }, [refreshLiveOperationalData]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const acquire = async () => {
+            if (!keepAwake || document.visibilityState !== "visible") return;
+            try {
+                const wakeLockApi = (navigator as Navigator & { wakeLock?: { request: (type: "screen") => Promise<{ release: () => Promise<void> }> } }).wakeLock;
+                if (!wakeLockApi) { setWakeActive(false); return; }
+                wakeLockRef.current = await wakeLockApi.request("screen");
+                if (!cancelled) setWakeActive(true);
+            } catch { if (!cancelled) setWakeActive(false); }
+        };
+        if (keepAwake) void acquire();
+        else { void wakeLockRef.current?.release().catch(() => undefined); wakeLockRef.current = null; setWakeActive(false); }
+        const onVisible = () => { if (document.visibilityState === "visible" && keepAwake && !wakeLockRef.current) void acquire(); };
+        document.addEventListener("visibilitychange", onVisible);
+        return () => { cancelled = true; document.removeEventListener("visibilitychange", onVisible); void wakeLockRef.current?.release().catch(() => undefined); wakeLockRef.current = null; };
+    }, [keepAwake]);
+
+    useEffect(() => {
+        const handler = (event: Event) => {
+            const detail = (event as CustomEvent<{ message?: string; tone?: string }>).detail;
+            if (!detail?.message) return;
+            setNotice(detail.message);
+            window.setTimeout(() => setNotice(""), 5000);
+        };
+        window.addEventListener("seatserve:operation-notice", handler);
+        return () => window.removeEventListener("seatserve:operation-notice", handler);
     }, []);
 
     const handleRefresh = async () => {
@@ -147,7 +200,7 @@ export default function KitchenOperations() {
     return (
         <div className="ko-page">
             <section className="ko-workspace">
-                <KitchenDashboardHeader onRefresh={handleRefresh} syncMeta={syncMeta} isSyncing={isSyncing}>
+                <KitchenDashboardHeader onRefresh={handleRefresh} syncMeta={syncMeta} isSyncing={isSyncing} keepAwake={keepAwake} wakeActive={wakeActive} onToggleAwake={() => setKeepAwake((value) => !value)}>
                     <div className="ko-metrics" aria-label="Current event order totals">
                         <Metric label="New" value={columns[0].orders.length} tone="blue" />
                         <Metric label="Preparing" value={columns[1].orders.length} tone="orange" />

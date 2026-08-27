@@ -2,6 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { seedData } from "../data/seed";
 import {
+    assignRunnerLive,
     createLocalBackup,
     getActiveDataStorageKey,
     getActiveWorkspaceId,
@@ -101,6 +102,7 @@ interface SeatServeContextValue {
     updateReportingData: (next: SeatServeData, reason?: string) => void;
     resetDemoData: () => void;
     repairWorkspaceData: () => void;
+    refreshLiveOperationalData: () => Promise<void>;
 }
 
 const SeatServeContext = createContext<SeatServeContextValue | undefined>(undefined);
@@ -248,6 +250,36 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
         return path.startsWith("/order") || path.startsWith("/runner") || path.includes("/kitchen");
     };
 
+    const refreshLiveOperationalData = useCallback(async () => {
+        if (!isDeploymentManagedSync() || !navigator.onLine) return;
+        const result = await pollLiveGoogleSheets();
+        if (!result.ok || !result.live) return;
+        const live = result.live;
+        const rank: Record<Order["status"], number> = { new: 0, preparing: 1, ready: 2, assigned: 3, delivering: 4, delivered: 5, cancelled: 99 };
+        setData((current) => {
+            const localOrders = new Map(current.orders.map((order) => [order.id, order]));
+            const reconciledOrders = (live.orders ?? current.orders).map((remote) => {
+                const local = localOrders.get(remote.id);
+                if (!local) return remote;
+                if (rank[remote.status] < rank[local.status] && remote.status !== "cancelled") return local;
+                return { ...local, ...remote };
+            });
+            current.orders.forEach((local) => {
+                if (!reconciledOrders.some((order) => order.id === local.id)) reconciledOrders.push(local);
+            });
+            const next = migrateData({
+                ...current,
+                events: live.events ?? current.events,
+                orders: reconciledOrders,
+                runners: live.runners ?? current.runners,
+                feedback: live.feedback ?? current.feedback,
+            });
+            if (JSON.stringify(next) === JSON.stringify(current)) return current;
+            replacingDataRef.current = true;
+            return next;
+        });
+    }, []);
+
     // --- LIVE MULTI-DEVICE SYNC ---
     // Orders, runner state, event ordering state, feedback, and SeatBeacon need to move
     // between physical devices much faster than configuration data. This lightweight
@@ -261,37 +293,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
             if (cancelled || inFlight || !navigator.onLine || document.visibilityState !== "visible") return;
             inFlight = true;
             try {
-                const result = await pollLiveGoogleSheets();
-                if (!cancelled && result.ok && result.live) {
-                    const live = result.live;
-                    const rank: Record<Order["status"], number> = { new: 0, preparing: 1, ready: 2, assigned: 3, delivering: 4, delivered: 5, cancelled: 99 };
-                    // Reconcile against the state that exists when the response is applied, not
-                    // the state that existed when the request started. This prevents an older
-                    // in-flight poll from visually undoing a Kitchen/Runner action.
-                    setData((current) => {
-                        const localOrders = new Map(current.orders.map((order) => [order.id, order]));
-                        const reconciledOrders = (live.orders ?? current.orders).map((remote) => {
-                            const local = localOrders.get(remote.id);
-                            if (!local) return remote;
-                            if (rank[remote.status] < rank[local.status] && remote.status !== "cancelled") return local;
-                            return { ...local, ...remote };
-                        });
-                        // Preserve a just-created local order until it appears in the cloud response.
-                        current.orders.forEach((local) => {
-                            if (!reconciledOrders.some((order) => order.id === local.id)) reconciledOrders.push(local);
-                        });
-                        const next = migrateData({
-                            ...current,
-                            events: live.events ?? current.events,
-                            orders: reconciledOrders,
-                            runners: live.runners ?? current.runners,
-                            feedback: live.feedback ?? current.feedback,
-                        });
-                        if (JSON.stringify(next) === JSON.stringify(current)) return current;
-                        replacingDataRef.current = true;
-                        return next;
-                    });
-                }
+                await refreshLiveOperationalData();
             } catch (error) {
                 console.error("Live multi-device refresh failed", error);
             } finally {
@@ -314,7 +316,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
             window.removeEventListener("focus", onFocus);
             window.removeEventListener("online", onOnline);
         };
-    }, [workspaceRevision]);
+    }, [workspaceRevision, refreshLiveOperationalData]);
 
     // --- SAFE SILENT AUTO-LOAD ---
     useEffect(() => {
@@ -696,40 +698,40 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
                 activity: pushActivity(current, runnerId ? `Runner assigned to order ${orderId}` : `Runner removed from order ${orderId}`, "info"),
             };
         });
+        if (isDeploymentManagedSync() && navigator.onLine) {
+            void assignRunnerLive(orderId, runnerId)
+                .then(async () => {
+                    window.dispatchEvent(new CustomEvent("seatserve:operation-notice", { detail: { message: runnerId ? "Runner assigned successfully." : "Runner assignment removed.", tone: "success" } }));
+                    await refreshLiveOperationalData();
+                })
+                .catch((error) => {
+                    const message = error instanceof Error ? error.message : "Runner assignment failed.";
+                    window.dispatchEvent(new CustomEvent("seatserve:operation-notice", { detail: { message: `Runner assignment failed: ${message}`, tone: "error" } }));
+                });
+        }
     };
 
     const autoAssignRunner = (orderId: string) => {
-        let assignedRunnerId: string | undefined;
-        setData((current) => {
-            const order = current.orders.find((item) => item.id === orderId);
-            if (!order || order.fulfillmentMethod === "pickup" || (order.status !== "ready" && order.status !== "assigned")) return current;
-            const available = current.runners
-                .filter((runner) => runner.active && runner.status === "available" && !runner.activeOrderId)
-                .sort((a, b) => {
-                    const waited = new Date(a.availableSince ?? 0).getTime() - new Date(b.availableSince ?? 0).getTime();
-                    return waited || a.completedDeliveries - b.completedDeliveries;
-                });
-            const runner = available[0];
-            if (!runner) {
-                const queuedAt = order.assignmentQueuedAt ?? new Date().toISOString();
-                return {
-                    ...current,
-                    orders: current.orders.map((item) => item.id === orderId ? { ...item, assignmentQueuedAt: queuedAt } : item),
-                    activity: pushActivity(current, `Order ${orderId} queued for the next available runner`, "warning"),
-                };
-            }
-            assignedRunnerId = runner.id;
-            const now = new Date();
-            const estimateMinutes = getZoneEstimate(current, order);
-            const estimatedAvailableAt = new Date(now.getTime() + estimateMinutes * 60_000).toISOString();
-            return {
-                ...current,
-                orders: current.orders.map((item) => item.id === orderId ? { ...item, runnerId: runner.id, status: "assigned" as const, assignedAt: now.toISOString(), assignmentQueuedAt: undefined } : item),
-                runners: current.runners.map((item) => item.id === runner.id ? { ...item, status: "assigned" as const, activeOrderId: orderId, assignedAt: now.toISOString(), estimatedAvailableAt, availableSince: undefined } : item),
-                activity: pushActivity(current, `${runner.name} auto-assigned to order ${orderId}`, "success"),
-            };
-        });
-        return assignedRunnerId;
+        const current = currentDataRef.current;
+        const order = current.orders.find((item) => item.id === orderId);
+        if (!order || order.fulfillmentMethod === "pickup" || (order.status !== "ready" && order.status !== "assigned")) return undefined;
+        const runner = current.runners
+            .filter((item) => item.active && item.status === "available" && !item.activeOrderId)
+            .sort((a, b) => {
+                const waited = new Date(a.availableSince ?? 0).getTime() - new Date(b.availableSince ?? 0).getTime();
+                return waited || a.completedDeliveries - b.completedDeliveries;
+            })[0];
+        if (!runner) {
+            setData((latest) => ({
+                ...latest,
+                orders: latest.orders.map((item) => item.id === orderId ? { ...item, assignmentQueuedAt: item.assignmentQueuedAt ?? new Date().toISOString() } : item),
+                activity: pushActivity(latest, `Order ${orderId} queued for the next available runner`, "warning"),
+            }));
+            window.dispatchEvent(new CustomEvent("seatserve:operation-notice", { detail: { message: "No runner is currently available. Order queued for assignment.", tone: "error" } }));
+            return undefined;
+        }
+        assignRunnerToOrder(orderId, runner.id);
+        return runner.id;
     };
 
     const markRunnerAvailable = (runnerId: string) => {
@@ -1045,7 +1047,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
 
     const getCurrentDataSnapshot = () => currentDataRef.current;
 
-    return <SeatServeContext.Provider value={{ data, getCurrentDataSnapshot, activeEvent, addEvent, updateEvent, duplicateEvent, deleteEvent, startEvent, completeEvent, setOrderingEnabled, placeOrder, updateOrderStatus, markOrderPaymentCollected, requestSeatBeacon, markSeatBeaconOpened, markCustomerLocated, assignRunnerToOrder, autoAssignRunner, markRunnerAvailable, cancelOrder, addRunner, updateRunner, duplicateRunner, deleteRunner, setRunnerStatus, addMenuItem, updateMenuItem, duplicateMenuItem, deleteMenuItem, addMenuCategory, updateMenuCategory, reorderMenuCategories, reorderMenuItems, deleteMenuCategory, addMenu, updateMenu, deleteMenu, assignMenuToEvent, addVenue, updateVenue, duplicateVenue, deleteVenue, addZone, updateZone, duplicateZone, deleteZone, addSection, updateSection, deleteSection, updateCustomerExperience, updateStaffAccess, submitCustomerFeedback, replaceData, mergeRemoteOrder, updateReportingData, resetDemoData, repairWorkspaceData }}>{children}</SeatServeContext.Provider>;
+    return <SeatServeContext.Provider value={{ data, getCurrentDataSnapshot, activeEvent, addEvent, updateEvent, duplicateEvent, deleteEvent, startEvent, completeEvent, setOrderingEnabled, placeOrder, updateOrderStatus, markOrderPaymentCollected, requestSeatBeacon, markSeatBeaconOpened, markCustomerLocated, assignRunnerToOrder, autoAssignRunner, markRunnerAvailable, cancelOrder, addRunner, updateRunner, duplicateRunner, deleteRunner, setRunnerStatus, addMenuItem, updateMenuItem, duplicateMenuItem, deleteMenuItem, addMenuCategory, updateMenuCategory, reorderMenuCategories, reorderMenuItems, deleteMenuCategory, addMenu, updateMenu, deleteMenu, assignMenuToEvent, addVenue, updateVenue, duplicateVenue, deleteVenue, addZone, updateZone, duplicateZone, deleteZone, addSection, updateSection, deleteSection, updateCustomerExperience, updateStaffAccess, submitCustomerFeedback, replaceData, mergeRemoteOrder, updateReportingData, resetDemoData, repairWorkspaceData, refreshLiveOperationalData }}>{children}</SeatServeContext.Provider>;
 }
 
 export function useSeatServe() {

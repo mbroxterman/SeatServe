@@ -36,12 +36,12 @@ export default function AdminLayout() {
             <p>Workspace</p>
             <NavItem to="/admin/settings" label="Settings" icon={Settings} />
           </div>
-          <div className="admin-sidebar__version">SeatServe v2.1.7E</div>
+          <div className="admin-sidebar__version">SeatServe v2.1.7F</div>
         </aside>
 
         <div className="admin-shell__content">
           <main className="admin-shell__main"><Outlet /></main>
-          <footer className="admin-shell__footer">© 2026 SeatServe · Administration v2.1.7E</footer>
+          <footer className="admin-shell__footer">© 2026 SeatServe · Administration v2.1.7F</footer>
         </div>
       </div>
     </div>
