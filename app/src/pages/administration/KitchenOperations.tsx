@@ -27,29 +27,33 @@ const elapsedLabel = (value?: string) => {
 const remainingMinutes = (value?: string) => value ? Math.max(0, Math.ceil((new Date(value).getTime() - Date.now()) / 60_000)) : 0;
 const statusStep = (status: OrderStatus) => status === "assigned" ? 3 : Math.max(0, FLOW.findIndex((item) => item.status === status));
 
-function KitchenDashboardHeader({ onRefresh, syncMeta, isSyncing, keepAwake, wakeActive, onToggleAwake, children }: { onRefresh: () => void; syncMeta: SyncMeta; isSyncing: boolean; keepAwake: boolean; wakeActive: boolean; onToggleAwake: () => void; children: React.ReactNode }) {
+function KitchenDashboardHeader({ onRefresh, syncMeta, isSyncing, keepAwake, wakeActive, onToggleAwake, open, onToggleOpen, children }: { onRefresh: () => void; syncMeta: SyncMeta; isSyncing: boolean; keepAwake: boolean; wakeActive: boolean; onToggleAwake: () => void; open: boolean; onToggleOpen: () => void; children: React.ReactNode }) {
     const lastSync = syncMeta.lastSuccessfulSyncAt ? new Date(syncMeta.lastSuccessfulSyncAt).toLocaleString() : "never";
     return (
         <header className="ko-header">
-            <div className="ko-header__title">
-                <p className="ko-eyebrow">Administration</p>
-                <h1>Kitchen Operations</h1>
+            <div className="ko-header__row">
+                {children}
+                <button type="button" className="ko-header__toggle" onClick={onToggleOpen} aria-expanded={open} aria-label={open ? "Hide sync controls" : "Show sync controls"} title={open ? "Hide sync controls" : "Show sync controls"}>
+                    {open ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                    <span>{open ? "Hide" : "More"}</span>
+                </button>
             </div>
-            {children}
-            <div className="ko-header__sync">
-                <button onClick={onRefresh} disabled={isSyncing}>
-                    <RefreshCw size={16} className={isSyncing ? "is-syncing" : ""} />
-                    {isSyncing ? "Loading..." : "Load from Sheets"}
-                </button>
-                <button type="button" onClick={onToggleAwake} title="Keep the Kitchen display awake during the event">
-                    <Zap size={16} />
-                    {keepAwake ? (wakeActive ? "Screen Awake" : "Keep Awake On") : "Keep Awake Off"}
-                </button>
-                <div className="sync-status">
-                    <CheckCircle2 size={16} />
-                    <span>Last updated: {lastSync}</span>
+            {open && (
+                <div className="ko-header__sync">
+                    <button onClick={onRefresh} disabled={isSyncing}>
+                        <RefreshCw size={16} className={isSyncing ? "is-syncing" : ""} />
+                        {isSyncing ? "Loading..." : "Load from Sheets"}
+                    </button>
+                    <button type="button" onClick={onToggleAwake} title="Keep the Kitchen display awake during the event">
+                        <Zap size={16} />
+                        {keepAwake ? (wakeActive ? "Screen Awake" : "Keep Awake On") : "Keep Awake Off"}
+                    </button>
+                    <div className="sync-status">
+                        <CheckCircle2 size={16} />
+                        <span>Last updated: {lastSync}</span>
+                    </div>
                 </div>
-            </div>
+            )}
         </header>
     );
 }
@@ -68,6 +72,14 @@ export default function KitchenOperations() {
     const [keepAwake, setKeepAwake] = useState(true);
     const [wakeActive, setWakeActive] = useState(false);
     const wakeLockRef = useRef<{ release: () => Promise<void> } | null>(null);
+    const [headerOpen, setHeaderOpen] = useState<boolean>(() => {
+        try { return localStorage.getItem("seatserve:kitchen-header-open") !== "false"; } catch { return true; }
+    });
+    const toggleHeaderOpen = () => setHeaderOpen((value) => {
+        const next = !value;
+        try { localStorage.setItem("seatserve:kitchen-header-open", String(next)); } catch { /* ignore storage errors */ }
+        return next;
+    });
 
     useEffect(() => {
         const timer = window.setInterval(() => setTick((value) => value + 1), 1000);
@@ -205,7 +217,7 @@ export default function KitchenOperations() {
     return (
         <div className="ko-page">
             <section className="ko-workspace">
-                <KitchenDashboardHeader onRefresh={handleRefresh} syncMeta={syncMeta} isSyncing={isSyncing} keepAwake={keepAwake} wakeActive={wakeActive} onToggleAwake={() => setKeepAwake((value) => !value)}>
+                <KitchenDashboardHeader onRefresh={handleRefresh} syncMeta={syncMeta} isSyncing={isSyncing} keepAwake={keepAwake} wakeActive={wakeActive} onToggleAwake={() => setKeepAwake((value) => !value)} open={headerOpen} onToggleOpen={toggleHeaderOpen}>
                     <div className="ko-metrics" aria-label="Current event order totals">
                         <Metric label="New" value={columns[0].orders.length} tone="blue" />
                         <Metric label="Preparing" value={columns[1].orders.length} tone="orange" />
