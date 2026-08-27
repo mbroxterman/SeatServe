@@ -82,6 +82,10 @@ export interface RemoteEnvelope {
     structuredSync?: boolean;
     schemaVersion?: number;
     menuItemCount?: number;
+  runnerId?: string;
+  runnerName?: string;
+  activeRunnerCount?: number;
+  availableRunnerCount?: number;
 }
 
 export const defaultSyncConfig: SyncConfig = {
@@ -445,6 +449,18 @@ export async function assignRunnerLive(orderId: string, runnerId?: string): Prom
     });
     const result = await parseResponse(response);
     if (!result.ok) throw new Error(result.message ?? "Runner assignment failed.");
+    return result;
+}
+
+export async function autoAssignRunnerLive(orderId: string): Promise<RemoteEnvelope> {
+    const config = requireEndpoint();
+    const response = await fetch(config.endpointUrl.trim(), {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "autoAssignRunner", workspaceName: config.workspaceName, orderId }),
+    });
+    const result = await parseResponse(response);
+    if (!result.ok) throw new Error(result.message ?? "Auto assignment failed.");
     return result;
 }
 

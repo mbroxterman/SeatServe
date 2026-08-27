@@ -1,27 +1,23 @@
-SeatServe v2.1.7F - Kitchen Live Sync & Runner Assignment Patch
-Expected client version: v2.1.7F
-Expected Apps Script schema: v14
+SeatServe v2.1.7G - Server-Side Auto Assignment
+Baseline: user-provided SeatServe(6).zip / v2.1.7F
+Apps Script schema: v15
 
 Changed files:
-app/src/services/persistence.ts
-app/src/state/SeatServeContext.tsx
-app/src/pages/administration/KitchenOperations.tsx
-app/src/pages/runner/RunnerMobile.tsx
-app/src/layouts/AdminLayout.tsx
-app/google-apps-script/Code.gs
+- app/src/layouts/AdminLayout.tsx
+- app/src/state/SeatServeContext.tsx
+- app/src/services/persistence.ts
+- app/google-apps-script/Code.gs
 
 Changes:
-- Kitchen explicitly refreshes live operational data on open, every 3 seconds, focus, visibility return, and reconnect.
-- Runner Mobile explicitly refreshes live operational data every 3 seconds and on focus/visibility return.
-- Runner assignment uses a dedicated atomic Apps Script action instead of waiting for a whole live workspace save.
-- Auto Assign uses the same atomic runner assignment path.
-- Kitchen shows success/failure feedback for runner assignment.
-- Kitchen requests Screen Wake Lock by default where supported and provides a Keep Awake toggle/status.
-- Existing v2.1.7E order-state reconciliation is preserved.
+- Auto Assign now asks Google Apps Script to choose from authoritative runner state.
+- Assignment is atomic under a script lock: order and runner update together.
+- If no runner is available, backend returns counts/reason instead of relying on stale Kitchen cache.
+- Manual runner assignment from v2.1.7F remains atomic.
+- Existing Kitchen 3-second live order discovery and wake-lock behavior preserved.
 
 Install:
 Extract this ZIP into C:\Users\mbroxte\Documents\SeatServe and replace matching files.
-No npm install is required.
-Run npm run build from the app folder before committing.
-Redeploy app/google-apps-script/Code.gs as a new version of the existing Apps Script web app.
-Test Connection should show schema v14.
+No npm install required.
+Run npm run build from the app folder.
+Redeploy app/google-apps-script/Code.gs as a new version of the existing Apps Script web deployment.
+Test Connection should report schema v15.

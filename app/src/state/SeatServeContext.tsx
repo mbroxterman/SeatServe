@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { seedData } from "../data/seed";
 import {
     assignRunnerLive,
+    autoAssignRunnerLive,
     createLocalBackup,
     getActiveDataStorageKey,
     getActiveWorkspaceId,
@@ -715,6 +716,20 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
         const current = currentDataRef.current;
         const order = current.orders.find((item) => item.id === orderId);
         if (!order || order.fulfillmentMethod === "pickup" || (order.status !== "ready" && order.status !== "assigned")) return undefined;
+
+        if (isDeploymentManagedSync() && navigator.onLine) {
+            void autoAssignRunnerLive(orderId)
+                .then(async (result) => {
+                    window.dispatchEvent(new CustomEvent("seatserve:operation-notice", { detail: { message: result.message || (result.runnerName ? `${result.runnerName} assigned successfully.` : "Runner assigned successfully."), tone: "success" } }));
+                    await refreshLiveOperationalData();
+                })
+                .catch((error) => {
+                    const message = error instanceof Error ? error.message : "Auto assignment failed.";
+                    window.dispatchEvent(new CustomEvent("seatserve:operation-notice", { detail: { message: `Auto assignment failed: ${message}`, tone: "error" } }));
+                });
+            return undefined;
+        }
+
         const runner = current.runners
             .filter((item) => item.active && item.status === "available" && !item.activeOrderId)
             .sort((a, b) => {
@@ -722,12 +737,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
                 return waited || a.completedDeliveries - b.completedDeliveries;
             })[0];
         if (!runner) {
-            setData((latest) => ({
-                ...latest,
-                orders: latest.orders.map((item) => item.id === orderId ? { ...item, assignmentQueuedAt: item.assignmentQueuedAt ?? new Date().toISOString() } : item),
-                activity: pushActivity(latest, `Order ${orderId} queued for the next available runner`, "warning"),
-            }));
-            window.dispatchEvent(new CustomEvent("seatserve:operation-notice", { detail: { message: "No runner is currently available. Order queued for assignment.", tone: "error" } }));
+            window.dispatchEvent(new CustomEvent("seatserve:operation-notice", { detail: { message: "No runner is currently available.", tone: "error" } }));
             return undefined;
         }
         assignRunnerToOrder(orderId, runner.id);
