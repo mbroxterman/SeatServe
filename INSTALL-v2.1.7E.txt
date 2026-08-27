@@ -1,0 +1,26 @@
+SeatServe v2.1.7E - Live State Reconciliation Patch
+
+Extract this ZIP into:
+C:\Users\mbroxte\Documents\SeatServe
+and replace matching files.
+
+Changed files only:
+- app/src/services/persistence.ts
+- app/src/state/SeatServeContext.tsx
+- app/src/pages/customer/OrderTracking.tsx
+- app/google-apps-script/Code.gs
+
+What changed:
+- Live polling no longer stops just because a device has pending local changes.
+- Stale live responses cannot visually move an order backward.
+- Newly-created local orders are preserved until Google returns them.
+- Runner live polling can receive Ready/assigned order changes without requiring Load from Sheets.
+- Customer tracking chooses the furthest-progressed order state instead of a stale local context copy.
+- Delivered remains authoritative so SeatBeacon is shut down and cannot be restarted by an older response.
+- Apps Script schema is now v13.
+
+No npm install is required.
+Run: npm run build
+
+Code.gs MUST be redeployed as a new version of the existing Apps Script web app.
+After deployment, Test Connection should show schema v13.

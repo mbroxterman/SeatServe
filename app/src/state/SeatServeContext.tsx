@@ -226,15 +226,19 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
     };
 
     const mergeRemoteOrder = useCallback((order: Order) => {
+        const rank: Record<Order["status"], number> = { new: 0, preparing: 1, ready: 2, assigned: 3, delivering: 4, delivered: 5, cancelled: 99 };
         setData((current) => {
             const existing = current.orders.find((item) => item.id === order.id);
-            if (existing && JSON.stringify(existing) === JSON.stringify(order)) return current;
+            // Never let a slower/stale live response visually move an order backward.
+            if (existing && rank[order.status] < rank[existing.status] && order.status !== "cancelled") return current;
+            const reconciled = existing ? { ...existing, ...order } : order;
+            if (existing && JSON.stringify(existing) === JSON.stringify(reconciled)) return current;
             replacingDataRef.current = true;
             return {
                 ...current,
                 orders: existing
-                    ? current.orders.map((item) => item.id === order.id ? order : item)
-                    : [order, ...current.orders],
+                    ? current.orders.map((item) => item.id === order.id ? reconciled : item)
+                    : [reconciled, ...current.orders],
             };
         });
     }, []);
@@ -261,10 +265,22 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
                 if (!cancelled && result.ok && result.live) {
                     const live = result.live;
                     const current = currentDataRef.current;
+                    const rank: Record<Order["status"], number> = { new: 0, preparing: 1, ready: 2, assigned: 3, delivering: 4, delivered: 5, cancelled: 99 };
+                    const localOrders = new Map(current.orders.map((order) => [order.id, order]));
+                    const reconciledOrders = (live.orders ?? current.orders).map((remote) => {
+                        const local = localOrders.get(remote.id);
+                        if (!local) return remote;
+                        if (rank[remote.status] < rank[local.status] && remote.status !== "cancelled") return local;
+                        return { ...local, ...remote };
+                    });
+                    // Preserve a just-created local order until it appears in the cloud response.
+                    current.orders.forEach((local) => {
+                        if (!reconciledOrders.some((order) => order.id === local.id)) reconciledOrders.push(local);
+                    });
                     const next = migrateData({
                         ...current,
                         events: live.events ?? current.events,
-                        orders: live.orders ?? current.orders,
+                        orders: reconciledOrders,
                         runners: live.runners ?? current.runners,
                         feedback: live.feedback ?? current.feedback,
                     });

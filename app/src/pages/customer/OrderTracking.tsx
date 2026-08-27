@@ -30,7 +30,10 @@ export default function OrderTracking() {
   };
   const [trackedOrder, setTrackedOrder] = useState<Order | undefined>(() => contextOrder ?? readCachedOrder());
   const [trackingReady, setTrackingReady] = useState(Boolean(contextOrder ?? readCachedOrder()));
-  const order = contextOrder ?? trackedOrder;
+  const statusRank: Record<Order["status"], number> = { new: 0, preparing: 1, ready: 2, assigned: 3, delivering: 4, delivered: 5, cancelled: 99 };
+  const order = contextOrder && trackedOrder
+    ? (statusRank[trackedOrder.status] >= statusRank[contextOrder.status] ? trackedOrder : contextOrder)
+    : contextOrder ?? trackedOrder;
   const [beaconActive, setBeaconActive] = useState(false);
   const [rating, setRating] = useState(0);
   const [comments, setComments] = useState("");
@@ -42,7 +45,10 @@ export default function OrderTracking() {
 
   useEffect(() => {
     if (!contextOrder || !orderId) return;
-    setTrackedOrder(contextOrder);
+    setTrackedOrder((current) => {
+      if (current && statusRank[contextOrder.status] < statusRank[current.status] && contextOrder.status !== "cancelled") return current;
+      return contextOrder;
+    });
     setTrackingReady(true);
     try {
       sessionStorage.setItem(`seatserve.customer.order.${orderId}`, JSON.stringify({
@@ -64,7 +70,10 @@ export default function OrderTracking() {
         const result = await pollLiveOrder(orderId);
         if (cancelled) return;
         if (result.ok && result.order) {
-          setTrackedOrder(result.order);
+          setTrackedOrder((current) => {
+            if (current && statusRank[result.order!.status] < statusRank[current.status] && result.order!.status !== "cancelled") return current;
+            return current ? { ...current, ...result.order! } : result.order!;
+          });
           mergeRemoteOrder(result.order);
           try {
             sessionStorage.setItem(`seatserve.customer.order.${orderId}`, JSON.stringify({

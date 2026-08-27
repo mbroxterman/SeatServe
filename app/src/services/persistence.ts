@@ -402,7 +402,7 @@ export async function pushToGoogleSheets(data: SeatServeData, force = false): Pr
             return result;
         }
         if (!result.ok) throw new Error(result.message ?? "Google Sheets sync failed.");
-        if (result.schemaVersion !== undefined && result.schemaVersion < 12) throw new Error("Google Apps Script is out of date. Replace Code.gs with the v2.1.7D version and redeploy a new web-app version.");
+        if (result.schemaVersion !== undefined && result.schemaVersion < 13) throw new Error("Google Apps Script is out of date. Replace Code.gs with the v2.1.7E version and redeploy a new web-app version.");
         if (result.menuItemCount !== undefined && result.menuItemCount !== data.menuItems.length) throw new Error(`Google Sheets saved ${result.menuItemCount} menu items, but SeatServe sent ${data.menuItems.length}. Please redeploy Code.gs and try Sync now again.`);
 
         const now = new Date().toISOString();
@@ -438,9 +438,6 @@ export async function pushLiveGoogleSheets(data: SeatServeData): Promise<RemoteE
 
 export async function pollLiveGoogleSheets(): Promise<LiveRemoteEnvelope> {
     const config = requireEndpoint();
-    const meta = getSyncMeta();
-    // Never replace a just-made local operational action while it is still being pushed.
-    if (meta.pendingChanges) return { ok: true, message: "Waiting for local changes to sync." };
     try {
         const separator = config.endpointUrl.includes("?") ? "&" : "?";
         const response = await fetch(`${config.endpointUrl.trim()}${separator}action=live&workspace=${encodeURIComponent(config.workspaceName)}&cacheBust=${Date.now()}`, { cache: "no-store" });
