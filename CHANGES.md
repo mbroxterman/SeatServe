@@ -46,3 +46,15 @@ Manage deployments → Edit → New version → Deploy).
   - Load from Sheets / Keep Awake / Last updated now collapse behind a
     "Hide"/"More" toggle, since they're rarely touched mid-service. The
     collapsed/expanded state is remembered per device.
+
+## app/src/pages/customer/OrderTracking.tsx / CustomerOrder.css
+- Fixed a real bug: after a customer submitted their rating/feedback on the
+  delivered/thank-you screen, the "Done" button was a link to "/" - and "/"
+  redirects straight to your admin login. Customers were being sent toward
+  the staff area. Also removed the same broken link from the rare "Order not
+  found" screen.
+- After submitting feedback, the screen now asks "Would you like to order
+  again?" with an "Order Again" button that goes back to the same zone's
+  ordering page (the same stable link the printed QR code uses), instead of
+  a plain "Done" confirmation.
+

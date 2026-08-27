@@ -152,7 +152,7 @@ export default function OrderTracking() {
   }, [beaconActive, vibrationEnabled]);
 
   if (!order && !trackingReady) return <div className="customer-message"><h1>Finding your order...</h1><p>Connecting to the live SeatServe order status.</p></div>;
-  if (!order) return <div className="customer-message"><h1>Order not found</h1><p>We could not find this order in the live system. Please show your order number at the concession stand if you need help.</p><Link to="/">Return to SeatServe</Link></div>;
+  if (!order) return <div className="customer-message"><h1>Order not found</h1><p>We could not find this order in the live system. Please show your order number at the concession stand if you need help.</p></div>;
 
   const event = data.events.find((item) => item.id === order.eventId);
   const venue = data.venues.find((item) => item.id === order.location.venueId);
@@ -198,7 +198,12 @@ export default function OrderTracking() {
             {settings.showComments && <label className="feedback-comments"><span>{settings.commentsPrompt}</span><textarea rows={3} value={comments} onChange={(event) => setComments(event.target.value)} placeholder="Tell us how we can improve"/></label>}
           </> : <div className="feedback-thanks"><Check size={20}/><span>Thanks for helping us improve.</span></div>}
           <div className="community-support"><h3>{settings.supportTitle}</h3><div>{settings.supportLinks.filter((link) => link.enabled && link.url.trim()).map((link) => <a key={link.id} href={link.url} target="_blank" rel="noreferrer"><span>{link.icon}</span>{link.label}</a>)}</div></div>
-          {!submitted && !priorFeedback ? <button className="customer-primary thank-you-finish" onClick={submit}>{settings.finishLabel}</button> : <Link className="customer-primary thank-you-finish" to="/">Done</Link>}
+          {!submitted && !priorFeedback ? <button className="customer-primary thank-you-finish" onClick={submit}>{settings.finishLabel}</button> : (
+            <div className="order-again">
+              <h3>Would you like to order again?</h3>
+              {venue && zone ? <Link className="customer-primary thank-you-finish" to={`/order/zone/${venue.id}/${zone.id}`}>Order Again</Link> : <p className="order-again__fallback">Ask staff for the QR code to order again.</p>}
+            </div>
+          )}
         </section>
       </main>
     </div>;
