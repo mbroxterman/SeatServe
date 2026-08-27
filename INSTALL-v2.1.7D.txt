@@ -1,0 +1,23 @@
+SeatServe v2.1.7D - Atomic Live Order Sync
+
+PATCH ONLY. Extract into C:\Users\mbroxte\Documents\SeatServe and replace matching files.
+
+Changed files:
+- app/src/state/SeatServeContext.tsx
+- app/src/services/persistence.ts
+- app/src/layouts/AdminLayout.tsx
+- app/google-apps-script/Code.gs
+
+IMPORTANT:
+1. Run npm run build from the app folder before pushing.
+2. Replace Google Apps Script Code.gs and deploy a NEW VERSION of the existing web app deployment.
+3. Test Connection should report schema v12.
+4. Run one normal Admin Sync Now after deployment.
+5. Test Customer + Kitchen + Runner on separate devices without using Load from Sheets.
+
+v2.1.7D behavior:
+- Fast polling is limited to Customer Order/Tracking, Kitchen, and Runner operational screens.
+- Operational screens use a live-only save instead of replacing the whole workspace.
+- Google Apps Script serializes live writes with a script lock.
+- Server prevents stale order status from moving backward (for example Ready -> Preparing or Preparing -> New).
+- Administration/configuration screens retain normal full workspace sync behavior.

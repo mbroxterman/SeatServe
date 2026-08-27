@@ -402,7 +402,7 @@ export async function pushToGoogleSheets(data: SeatServeData, force = false): Pr
             return result;
         }
         if (!result.ok) throw new Error(result.message ?? "Google Sheets sync failed.");
-        if (result.schemaVersion !== undefined && result.schemaVersion < 11) throw new Error("Google Apps Script is out of date. Replace Code.gs with the v2.1.7C version and redeploy a new web-app version.");
+        if (result.schemaVersion !== undefined && result.schemaVersion < 12) throw new Error("Google Apps Script is out of date. Replace Code.gs with the v2.1.7D version and redeploy a new web-app version.");
         if (result.menuItemCount !== undefined && result.menuItemCount !== data.menuItems.length) throw new Error(`Google Sheets saved ${result.menuItemCount} menu items, but SeatServe sent ${data.menuItems.length}. Please redeploy Code.gs and try Sync now again.`);
 
         const now = new Date().toISOString();
@@ -412,6 +412,27 @@ export async function pushToGoogleSheets(data: SeatServeData, force = false): Pr
     } catch (error) {
         saveSyncMeta({ ...getSyncMeta(), pendingChanges: true });
         return failSyncAttempt(startedAt, "sync", error, response);
+    }
+}
+
+
+export async function pushLiveGoogleSheets(data: SeatServeData): Promise<RemoteEnvelope> {
+    const config = requireEndpoint();
+    try {
+        const response = await fetch(config.endpointUrl.trim(), {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({
+                action: "liveSave",
+                workspaceName: config.workspaceName,
+                live: { events: data.events, orders: data.orders, runners: data.runners, feedback: data.feedback },
+            }),
+        });
+        const result = await parseResponse(response);
+        if (!result.ok) throw new Error(result.message ?? "Live sync failed.");
+        return result;
+    } catch (error) {
+        throw error instanceof Error ? error : new Error("Live sync failed.");
     }
 }
 

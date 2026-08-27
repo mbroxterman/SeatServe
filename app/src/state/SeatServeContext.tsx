@@ -6,11 +6,14 @@ import {
     getActiveDataStorageKey,
     getActiveWorkspaceId,
     getSyncConfig,
+    getSyncMeta,
     isDeploymentManagedSync,
     markLocalChange,
     pollGoogleSheets,
     pollLiveGoogleSheets,
-    pushToGoogleSheets
+    pushLiveGoogleSheets,
+    pushToGoogleSheets,
+    saveSyncMeta
 } from "../services/persistence";
 import type {
     ActivityItem,
@@ -236,12 +239,17 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
         });
     }, []);
 
+    const isOperationalScreen = () => {
+        const path = window.location.pathname;
+        return path.startsWith("/order") || path.startsWith("/runner") || path.includes("/kitchen");
+    };
+
     // --- LIVE MULTI-DEVICE SYNC ---
     // Orders, runner state, event ordering state, feedback, and SeatBeacon need to move
     // between physical devices much faster than configuration data. This lightweight
     // poll runs only while Production is visible and never overwrites unsynced local work.
     useEffect(() => {
-        if (!isDeploymentManagedSync()) return;
+        if (!isDeploymentManagedSync() || !isOperationalScreen()) return;
         let cancelled = false;
         let inFlight = false;
 
@@ -293,6 +301,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         const performSilentLoad = async () => {
             await Promise.resolve();
+            if (isOperationalScreen()) { setCloudBootstrapReady(true); return; }
             if (cloudPollInFlightRef.current || !navigator.onLine) return;
 
             const config = getSyncConfig();
@@ -435,9 +444,20 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
             markLocalChange();
             const config = getSyncConfig();
             if (config.autoSync && config.connected && config.endpointUrl.trim() && navigator.onLine) {
-                const delayMs = Math.max(0, config.autoSyncIntervalSeconds) * 1000;
+                const operational = isOperationalScreen();
+                const delayMs = operational ? 100 : Math.max(0, config.autoSyncIntervalSeconds) * 1000;
                 autoSyncTimerRef.current = window.setTimeout(() => {
-                    if (!cancelled) void pushToGoogleSheets(data).catch(() => undefined);
+                    if (cancelled) return;
+                    if (operational) {
+                        void pushLiveGoogleSheets(data).then(() => {
+                            const meta = getSyncMeta();
+                            saveSyncMeta({ ...meta, state: "saved", pendingChanges: false, lastSuccessfulSyncAt: new Date().toISOString(), lastError: undefined });
+                        }).catch((error) => {
+                            console.error("Atomic live sync failed", error);
+                        });
+                    } else {
+                        void pushToGoogleSheets(data).catch(() => undefined);
+                    }
                 }, delayMs);
             }
         }

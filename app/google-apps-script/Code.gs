@@ -40,8 +40,9 @@ function doGet(e) {
 function doPost(e) {
   try {
     const request = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-    if (request.action !== 'save') return json_({ ok: false, message: 'Unsupported action.' });
-    return save_(request);
+    if (request.action === 'save') return save_(request);
+    if (request.action === 'liveSave') return liveSave_(request);
+    return json_({ ok: false, message: 'Unsupported action.' });
   } catch (error) {
     return json_({ ok: false, message: errorMessage_(error) });
   }
@@ -58,7 +59,7 @@ function status_(requestedWorkspaceName) {
     updatedAt: getMeta_(metaSheet, 'updatedAt') || '',
     spreadsheetName: ss.getName(),
     structuredSync: true,
-    schemaVersion: 11
+    schemaVersion: 12
   });
 }
 
@@ -76,12 +77,12 @@ function live_() {
     },
     updatedAt: getMeta_(metaSheet, 'updatedAt') || '',
     workspaceName: getMeta_(metaSheet, 'workspaceName') || ss.getName(),
-    schemaVersion: 11
+    schemaVersion: 12
   });
 }
 
 function order_(orderId) {
-  if (!orderId) return json_({ ok: false, message: 'Order ID is required.', schemaVersion: 11 });
+  if (!orderId) return json_({ ok: false, message: 'Order ID is required.', schemaVersion: 12 });
   const ss = getSpreadsheet_();
   const metaSheet = getOrCreate_(ss, META_SHEET, ['key', 'value']);
   const data = restoreActiveContacts_(readStructuredData_(ss));
@@ -91,8 +92,56 @@ function order_(orderId) {
     order: order || null,
     updatedAt: getMeta_(metaSheet, 'updatedAt') || '',
     workspaceName: getMeta_(metaSheet, 'workspaceName') || ss.getName(),
-    schemaVersion: 11
+    schemaVersion: 12
   });
+}
+
+function liveSave_(request) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const ss = getSpreadsheet_();
+    const metaSheet = getOrCreate_(ss, META_SHEET, ['key', 'value']);
+    const current = restoreActiveContacts_(readStructuredData_(ss));
+    const incoming = request.live || {};
+    const rank = { 'new':0, 'preparing':1, 'ready':2, 'assigned':3, 'delivering':4, 'delivered':5, 'cancelled':99 };
+    const remoteById = {};
+    (current.orders || []).forEach(function(o) { remoteById[o.id] = o; });
+    (incoming.orders || []).forEach(function(next) {
+      if (!next || !next.id) return;
+      const prev = remoteById[next.id];
+      if (!prev) { remoteById[next.id] = next; return; }
+      const prevRank = rank[prev.status] == null ? 0 : rank[prev.status];
+      const nextRank = rank[next.status] == null ? 0 : rank[next.status];
+      if (prev.status === 'cancelled' || prev.status === 'delivered') {
+        remoteById[next.id] = Object.assign({}, next, prev, { status: prev.status });
+      } else if (nextRank < prevRank && next.status !== 'cancelled') {
+        remoteById[next.id] = Object.assign({}, next, prev, { status: prev.status });
+      } else {
+        remoteById[next.id] = Object.assign({}, prev, next);
+      }
+    });
+    current.orders = Object.keys(remoteById).map(function(id) { return remoteById[id]; });
+
+    const runnerById = {};
+    (current.runners || []).forEach(function(r) { runnerById[r.id] = r; });
+    (incoming.runners || []).forEach(function(r) { if (r && r.id) runnerById[r.id] = Object.assign({}, runnerById[r.id] || {}, r); });
+    current.runners = Object.keys(runnerById).map(function(id) { return runnerById[id]; });
+    if (incoming.events) current.events = incoming.events;
+    if (incoming.feedback) current.feedback = incoming.feedback;
+
+    storeActiveContacts_(current.orders || []);
+    const data = sanitizeForSheets_(current);
+    writeStructuredData_(ss, data);
+    const updatedAt = new Date().toISOString();
+    setMeta_(metaSheet, 'updatedAt', updatedAt);
+    setMeta_(metaSheet, 'schemaVersion', '12');
+    setMeta_(metaSheet, 'lastWriteSource', 'SeatServe atomic live sync');
+    SpreadsheetApp.flush();
+    return json_({ ok:true, updatedAt:updatedAt, workspaceName:getMeta_(metaSheet,'workspaceName') || ss.getName(), structuredSync:true, schemaVersion:12, menuItemCount:(data.menuItems || []).length });
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function save_(request) {
@@ -121,11 +170,11 @@ function save_(request) {
   setMeta_(metaSheet, 'workspaceName', workspaceName);
   setMeta_(metaSheet, 'updatedAt', updatedAt);
   setMeta_(metaSheet, 'clientUpdatedAt', request.clientUpdatedAt || updatedAt);
-  setMeta_(metaSheet, 'schemaVersion', '11');
+  setMeta_(metaSheet, 'schemaVersion', '12');
   setMeta_(metaSheet, 'lastWriteSource', 'SeatServe app');
   SpreadsheetApp.flush();
 
-  return json_({ ok: true, updatedAt: updatedAt, workspaceName: workspaceName, structuredSync: true, schemaVersion: 11, menuItemCount: (data.menuItems || []).length });
+  return json_({ ok: true, updatedAt: updatedAt, workspaceName: workspaceName, structuredSync: true, schemaVersion: 12, menuItemCount: (data.menuItems || []).length });
 }
 
 function load_() {
@@ -151,7 +200,7 @@ function load_() {
     workspaceName: getMeta_(metaSheet, 'workspaceName') || ss.getName(),
     source: source,
     structuredSync: true,
-    schemaVersion: 11
+    schemaVersion: 12
   });
 }
 
@@ -375,7 +424,7 @@ function buildSnapshotRows_(data, updatedAt, workspaceName) {
   rows.push(['lastSyncAt', updatedAt]);
   rows.push(['lastSyncStatus', 'success']);
   rows.push(['lastSyncSource', 'SeatServe Netlify / app']);
-  rows.push(['appVersion', 'v2.1.7C']);
+  rows.push(['appVersion', 'v2.1.7D']);
   rows.push(['workspaceName', workspaceName]);
   return rows;
 }
