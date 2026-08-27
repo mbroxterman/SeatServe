@@ -1,0 +1,30 @@
+SeatServe v2.1.7E - Corrected Client Patch
+
+Baseline: uploaded SeatServe(5).zip (client v2.1.7D, Apps Script schema v13)
+
+Changed files:
+- app/src/state/SeatServeContext.tsx
+- app/src/layouts/AdminLayout.tsx
+
+Fixes:
+- Reconciles live polling responses against the latest React state at apply time.
+- Prevents an older in-flight Kitchen/Runner poll from visually undoing a newer local status action.
+- Keeps forward-only order status reconciliation already present in v2.1.7D.
+- Retains Customer order-specific polling and Delivered SeatBeacon shutdown already present in the uploaded baseline.
+- Updates visible client version to v2.1.7E.
+
+Google Apps Script:
+- NO Code.gs change is included in this corrected client patch.
+- Keep the currently deployed Apps Script schema v13.
+- No Apps Script redeployment is required if Test Connection already shows v13.
+
+Dependencies:
+- No npm install required.
+
+Verification after extraction:
+1. From C:\Users\mbroxte\Documents\SeatServe run: git status
+   Expected: the two client files above are modified.
+2. Run: Select-String -Path ".\app\src\layouts\AdminLayout.tsx" -Pattern "2.1.7E"
+3. Run: cd .\app ; npm run build
+4. Push to GitHub / allow Netlify to deploy.
+5. Test Connection should remain schema v13.

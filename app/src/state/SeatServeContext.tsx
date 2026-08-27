@@ -264,30 +264,33 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
                 const result = await pollLiveGoogleSheets();
                 if (!cancelled && result.ok && result.live) {
                     const live = result.live;
-                    const current = currentDataRef.current;
                     const rank: Record<Order["status"], number> = { new: 0, preparing: 1, ready: 2, assigned: 3, delivering: 4, delivered: 5, cancelled: 99 };
-                    const localOrders = new Map(current.orders.map((order) => [order.id, order]));
-                    const reconciledOrders = (live.orders ?? current.orders).map((remote) => {
-                        const local = localOrders.get(remote.id);
-                        if (!local) return remote;
-                        if (rank[remote.status] < rank[local.status] && remote.status !== "cancelled") return local;
-                        return { ...local, ...remote };
-                    });
-                    // Preserve a just-created local order until it appears in the cloud response.
-                    current.orders.forEach((local) => {
-                        if (!reconciledOrders.some((order) => order.id === local.id)) reconciledOrders.push(local);
-                    });
-                    const next = migrateData({
-                        ...current,
-                        events: live.events ?? current.events,
-                        orders: reconciledOrders,
-                        runners: live.runners ?? current.runners,
-                        feedback: live.feedback ?? current.feedback,
-                    });
-                    if (JSON.stringify(next) !== serializedDataRef.current) {
+                    // Reconcile against the state that exists when the response is applied, not
+                    // the state that existed when the request started. This prevents an older
+                    // in-flight poll from visually undoing a Kitchen/Runner action.
+                    setData((current) => {
+                        const localOrders = new Map(current.orders.map((order) => [order.id, order]));
+                        const reconciledOrders = (live.orders ?? current.orders).map((remote) => {
+                            const local = localOrders.get(remote.id);
+                            if (!local) return remote;
+                            if (rank[remote.status] < rank[local.status] && remote.status !== "cancelled") return local;
+                            return { ...local, ...remote };
+                        });
+                        // Preserve a just-created local order until it appears in the cloud response.
+                        current.orders.forEach((local) => {
+                            if (!reconciledOrders.some((order) => order.id === local.id)) reconciledOrders.push(local);
+                        });
+                        const next = migrateData({
+                            ...current,
+                            events: live.events ?? current.events,
+                            orders: reconciledOrders,
+                            runners: live.runners ?? current.runners,
+                            feedback: live.feedback ?? current.feedback,
+                        });
+                        if (JSON.stringify(next) === JSON.stringify(current)) return current;
                         replacingDataRef.current = true;
-                        setData(next);
-                    }
+                        return next;
+                    });
                 }
             } catch (error) {
                 console.error("Live multi-device refresh failed", error);
