@@ -16,6 +16,9 @@ Manage deployments → Edit → New version → Deploy).
   indefinitely. Now it's a real, immediate server action.
 - Added a new `markPaymentCollected` backend action (see OrderTracking entry
   below for why).
+- Bumped a leftover hardcoded `appVersion` string (written into the Google
+  Sheet on a full sync) from v2.1.7E to v2.1.7J to match the admin UI label.
+  Purely cosmetic - not shown anywhere in the app, no functional effect.
 
 ## app/src/services/persistence.ts
 - Added `markRunnerAvailableLive()` to call the new backend action above.
@@ -68,4 +71,16 @@ Manage deployments → Edit → New version → Deploy).
   again?" with an "Order Again" button that goes back to the same zone's
   ordering page (the same stable link the printed QR code uses), instead of
   a plain "Done" confirmation.
+
+## app/src/pages/customer/StableZoneEntry.tsx (again) / persistence.ts
+- Fixed the real cause of the intermittent "Zone not found... ask staff for the
+  latest sign" message on slow venue wifi. The QR landing page had no timeout
+  on its data fetch, and no way to tell "the server confirmed this zone
+  doesn't exist" apart from "we simply couldn't reach the server." A slow or
+  flaky connection was falling through to the same scary, misleading message
+  as an actually-bad QR code. Now: the fetch times out after 15 seconds
+  (matching the timeout already used elsewhere in the app), a failed/timed-out
+  connection shows a "Trouble connecting - Try Again" screen with a retry
+  button, and the "ask staff for the latest sign" message only ever appears
+  when the server has actually confirmed the zone doesn't exist.
 

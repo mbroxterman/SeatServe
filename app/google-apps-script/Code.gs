@@ -746,7 +746,7 @@ function buildSnapshotRows_(data, updatedAt, workspaceName) {
   rows.push(['lastSyncAt', updatedAt]);
   rows.push(['lastSyncStatus', 'success']);
   rows.push(['lastSyncSource', 'SeatServe Netlify / app']);
-  rows.push(['appVersion', 'v2.1.7E']);
+  rows.push(['appVersion', 'v2.1.7J']);
   rows.push(['workspaceName', workspaceName]);
   return rows;
 }

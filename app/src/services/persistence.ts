@@ -460,7 +460,14 @@ export async function markPaymentCollectedLive(orderId: string): Promise<RemoteE
 export async function loadCustomerBootstrap(): Promise<RemoteEnvelope> {
     const config = requireEndpoint();
     const sep = config.endpointUrl.includes("?") ? "&" : "?";
-    const response = await fetch(`${config.endpointUrl.trim()}${sep}action=bootstrap&workspace=${encodeURIComponent(config.workspaceName)}&cacheBust=${Date.now()}`, { cache: "no-store" });
+    const TIMEOUT_MS = 15000;
+    const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Connection timed out after ${TIMEOUT_MS / 1000} seconds. Your internet may be slow.`)), TIMEOUT_MS)
+    );
+    const response = await Promise.race([
+        fetch(`${config.endpointUrl.trim()}${sep}action=bootstrap&workspace=${encodeURIComponent(config.workspaceName)}&cacheBust=${Date.now()}`, { cache: "no-store" }),
+        timeoutPromise,
+    ]);
     return parseResponse(response);
 }
 export async function assignRunnerLive(orderId: string, runnerId?: string): Promise<RemoteEnvelope> {
