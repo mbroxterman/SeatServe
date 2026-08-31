@@ -112,7 +112,7 @@ function order_(orderId) {
 }
 
 function bootstrap_() {
-  const ss=getSpreadsheet_(); const metaSheet=getOrCreate_(ss,META_SHEET,['key','value']); const data=restoreActiveContacts_(readStructuredData_(ss));
+  const ss=getSpreadsheet_(); const metaSheet=getOrCreate_(ss,META_SHEET,['key','value']); const data=readBootstrapTables_(ss);
   return json_({ok:true,data:{events:data.events||[],venues:data.venues||[],menuCategories:data.menuCategories||[],menuItems:data.menuItems||[],menus:data.menus||[],runners:[],orders:[],feedback:[],customerExperience:data.customerExperience,staffAccess:data.staffAccess,activity:[],archivedOrders:[],archivedFeedback:[]},updatedAt:getMeta_(metaSheet,'updatedAt')||'',workspaceName:getMeta_(metaSheet,'workspaceName')||ss.getName(),schemaVersion:17});
 }
 
@@ -681,6 +681,58 @@ function readStructuredData_(ss) {
   const archivedFeedback = rowsAsObjects_(ss, 'Archived Feedback').filter(hasId_).map(function(x) { return { id:string_(x.id),orderId:string_(x.orderId),eventId:string_(x.eventId),rating:optionalNumber_(x.rating),comments:optionalString_(x.comments),submittedAt:string_(x.submittedAt) }; });
 
   return { archivedOrders:archivedOrders, archivedFeedback:archivedFeedback, events:events, venues:venues, runners:runners, menuCategories:menuCategories, menuItems:menuItems, menus:menus, orders:orders, activity:activity, customerExperience:customerExperience, staffAccess:staffAccess, feedback:feedback };
+}
+
+// Lean read for the customer QR-scan bootstrap. This is the single most
+// latency-sensitive endpoint in the app - it fires on every fresh customer
+// scan, with someone standing there waiting - so it skips the 6 tabs a
+// customer's ordering screen never uses (Runners, Orders, Customer Feedback,
+// Activity, Archived Orders, Archived Feedback), instead of doing the full
+// 16-tab readStructuredData_ read every time.
+function readBootstrapTables_(ss) {
+  const assetMap = readAssetMap_(ss);
+  const eventSheet = ss.getSheetByName('Events');
+  if (!eventSheet || eventSheet.getLastRow() < 1) throw new Error('Structured SeatServe tabs have not been synchronized yet.');
+
+  const events = readEventsTable_(ss);
+
+  const zoneRows = rowsAsObjects_(ss, 'Zones').filter(hasId_);
+  const sectionRows = rowsAsObjects_(ss, 'Venue Sections').filter(hasId_);
+  const venues = rowsAsObjects_(ss, 'Venues').filter(hasId_).map(function(v) {
+    const venueId = string_(v.id);
+    const venueZones = zoneRows.filter(function(z) { return string_(z.venueId) === venueId; }).map(function(z) {
+      const zoneId = string_(z.id);
+      return {
+        id:zoneId, name:string_(z.name), description:string_(z.description), deliveryEnabled:bool_(z.deliveryEnabled), active:bool_(z.active),
+        sections: sectionRows.filter(function(s) { return string_(s.venueId) === venueId && string_(s.zoneId) === zoneId; }).map(function(s) { return { id:string_(s.id), name:string_(s.name), seatRange:string_(s.seatRange), active:bool_(s.active) }; }),
+        baselineRoundTripMinutes:optionalNumber_(z.baselineRoundTripMinutes), learnedRoundTripMinutes:optionalNumber_(z.learnedRoundTripMinutes), completedTripCount:optionalNumber_(z.completedTripCount)
+      };
+    });
+    return { id:venueId, name:string_(v.name), type:string_(v.type), address:string_(v.address), active:bool_(v.active), zones:venueZones };
+  });
+
+  const menuCategories = rowsAsObjects_(ss, 'Menu Categories').filter(hasId_).map(function(x) { return {
+    id:string_(x.id), name:string_(x.name), imageUrl:optionalString_(restoreLargeCell_(assetMap, x.imageUrl)), visible:bool_(x.visible), sortOrder:number_(x.sortOrder)
+  }; }).sort(function(a,b) { return a.sortOrder - b.sortOrder; });
+
+  const menuItems = rowsAsObjects_(ss, 'Menu Items').filter(hasId_).map(function(x) { return {
+    id:string_(x.id), name:string_(x.name), category:string_(x.category), categoryId:optionalString_(x.categoryId), description:string_(x.description), price:number_(x.price), available:bool_(x.available), kind:string_(x.kind) || 'standard', inventory:undefined, condiments:splitList_(x.condiments), emoji:string_(x.emoji), imageUrl:optionalString_(restoreLargeCell_(assetMap, x.imageUrl)), imageAlt:optionalString_(x.imageAlt), displayStyle:string_(x.displayStyle) || 'emoji', __displayOrder:number_(x.displayOrder)
+  }; }).sort(function(a,b) { return a.__displayOrder - b.__displayOrder; }).map(function(x) { delete x.__displayOrder; return x; });
+
+  const menus = rowsAsObjects_(ss, 'Menus').filter(hasId_).map(function(x) { return {
+    id:string_(x.id), name:string_(x.name), description:string_(x.description), active:bool_(x.active), itemIds:splitList_(x.itemIds), priceOverrides:parseJson_(x.priceOverridesJson, {}), hiddenItemIds:splitList_(x.hiddenItemIds)
+  }; });
+
+  const settings = keyValueMap_(rowsAsObjects_(ss, 'Workspace Settings'));
+  const supportLinks = rowsAsObjects_(ss, 'Community Support').filter(hasId_).map(function(x) { return { id:string_(x.id), label:string_(x.label), url:string_(x.url), icon:string_(x.icon), enabled:bool_(x.enabled), __displayOrder:number_(x.displayOrder) }; }).sort(function(a,b) { return a.__displayOrder - b.__displayOrder; }).map(function(x) { delete x.__displayOrder; return x; });
+
+  const customerExperience = {
+    headline:string_(settings.headline), message:string_(settings.message), schoolMessage:string_(settings.schoolMessage), ratingPrompt:string_(settings.ratingPrompt), commentsPrompt:string_(settings.commentsPrompt), supportTitle:string_(settings.supportTitle), finishLabel:string_(settings.finishLabel), showRating:bool_(settings.showRating), showComments:bool_(settings.showComments), mascotSymbol:string_(settings.mascotSymbol), primaryColor:string_(settings.primaryColor), secondaryColor:string_(settings.secondaryColor), supportLinks:supportLinks, deliveryFee:number_(settings.deliveryFee), taxRatePercent:number_(settings.taxRatePercent), estimatedCardFeePercent:number_(settings.estimatedCardFeePercent), estimatedCardFeeFixed:number_(settings.estimatedCardFeeFixed), cashPaymentsEnabled:bool_(settings.cashPaymentsEnabled), cardPaymentsEnabled:bool_(settings.cardPaymentsEnabled), pickupEnabled:bool_(settings.pickupEnabled), pickupLocationName:string_(settings.pickupLocationName), pickupInstructions:string_(settings.pickupInstructions)
+  };
+
+  const staffAccess = { adminPinHash:optionalString_(settings.staffAdminPinHash), kitchenPinHash:optionalString_(settings.staffKitchenPinHash), runnerPinHash:optionalString_(settings.staffRunnerPinHash) };
+
+  return { events:events, venues:venues, menuCategories:menuCategories, menuItems:menuItems, menus:menus, customerExperience:customerExperience, staffAccess:staffAccess };
 }
 
 // When a user manually edits one of the structured tabs, mark the remote data as newer.

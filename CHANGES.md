@@ -19,6 +19,15 @@ Manage deployments → Edit → New version → Deploy).
 - Bumped a leftover hardcoded `appVersion` string (written into the Google
   Sheet on a full sync) from v2.1.7E to v2.1.7J to match the admin UI label.
   Purely cosmetic - not shown anywhere in the app, no functional effect.
+- The customer QR-scan bootstrap (`bootstrap_`) was the one endpoint left on
+  the full 16-tab read from the very first round of fixes - it seemed lower
+  priority at the time since it only fires once per customer, but it turned
+  out to be the most likely real cause of the "Zone not found" errors on
+  fresh scans (both at the venue and separately at home, on good connections)
+  - it fires on every single new customer's first load, with someone standing
+  there waiting, so it deserved the same treatment. It now only reads the
+  9 tabs it actually needs (skips Runners, Orders, Customer Feedback,
+  Activity, Archived Orders, Archived Feedback).
 
 ## app/src/services/persistence.ts
 - Added `markRunnerAvailableLive()` to call the new backend action above.
@@ -83,4 +92,18 @@ Manage deployments → Edit → New version → Deploy).
   connection shows a "Trouble connecting - Try Again" screen with a retry
   button, and the "ask staff for the latest sign" message only ever appears
   when the server has actually confirmed the zone doesn't exist.
+- Found a follow-up bug in that same fix: it was treating "the server responded
+  with a real error" exactly the same as "we couldn't reach the server at
+  all," both showing the generic "check your connection" message - which hid
+  the actual error and made it hard to diagnose. Now a genuine server error
+  message is shown on the Trouble connecting screen instead of being masked.
+- Tested the bootstrap endpoint directly and confirmed the backend itself
+  returns clean, complete, correct data - the earlier failures were most
+  likely caused by the 15-second timeout I added being too tight for Google
+  Apps Script's own "cold start" behavior (the first request after a period
+  of inactivity can occasionally take longer than that, then respond quickly
+  once warm - which matches "closing and rescanning worked" exactly). The QR
+  landing page now silently retries once automatically before ever showing an
+  error to the customer, instead of requiring them to notice and retry
+  manually.
 
