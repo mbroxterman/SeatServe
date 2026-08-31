@@ -106,4 +106,19 @@ Manage deployments → Edit → New version → Deploy).
   landing page now silently retries once automatically before ever showing an
   error to the customer, instead of requiring them to notice and retry
   manually.
+- Found the likely actual root cause via the exact error text ("Load failed"):
+  a documented Safari/iOS 18 bug (developer.apple.com/forums/thread/771127)
+  where a fetch fired immediately when a page becomes visible - exactly what
+  happens right after scanning a QR code - can fail after 20-40 seconds with
+  that exact error, even though the server is completely fine. Added a short
+  (250ms) delay before the QR landing page's first data request, which is
+  Apple's own documented workaround for this bug.
+- Tested again on the same iPad (Chrome for iOS - which, like Safari, is
+  WebKit under the hood on iOS, so it's subject to the same bug) with that
+  fix deployed, and it still failed with the same "Load failed" error -
+  250ms clearly wasn't enough margin, since the exact safe timing window
+  for this bug isn't documented precisely. Replaced the single 250ms delay
+  with up to 3 total attempts, each waiting longer than the last (400ms,
+  1300ms, 2200ms), to give much better odds of getting past whatever
+  WebKit networking window causes this.
 
