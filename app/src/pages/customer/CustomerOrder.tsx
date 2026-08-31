@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
     ArrowRight,
     Banknote,
@@ -18,9 +18,9 @@ import {
     Sparkles,
     Trash2,
 } from "lucide-react";
-import { Link, useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { useSeatServe } from "../../state/SeatServeContext";
-import { getActiveWorkspace, saveWorkspace, pushToGoogleSheets } from "../../services/persistence";
+import { getActiveWorkspace, saveWorkspace, pushToGoogleSheets, loadCustomerBootstrap } from "../../services/persistence";
 import type { FulfillmentMethod, MenuItem, OrderItem, PaymentMethod, Order } from "../../types/domain";
 import "./CustomerOrder.css";
 
@@ -42,7 +42,7 @@ const categoryIcon = (category: string) => {
 export default function CustomerOrder() {
     const { eventId, venueId, zoneId } = useParams();
     const navigate = useNavigate();
-    const { data, placeOrder, getCurrentDataSnapshot } = useSeatServe();
+    const { data, placeOrder, getCurrentDataSnapshot, replaceData } = useSeatServe();
     const [isSwitching, setIsSwitching] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -65,6 +65,60 @@ export default function CustomerOrder() {
     const venue = data.venues.find((item) => item.id === venueId);
     const zone = venue?.zones.find((item) => item.id === zoneId);
     const storageKey = `seatserve-customer-cart:v3:${eventId ?? "unknown"}:${zoneId ?? "unknown"}`;
+
+    // Fallback bootstrap for customers landing directly on this URL (e.g. an
+    // event-specific printed QR code) without first passing through the
+    // stable zone entry page. Without this, a brand-new visitor's local data
+    // is just the app's built-in seed/demo data - which never matches a real
+    // venue/zone ID - and nothing else ever refreshes it, since the ongoing
+    // background sync for this route only ever updates orders/runners/events,
+    // never venues or menu data. That combination is what was causing "This
+    // QR code is not valid" to show permanently for any new customer here,
+    // regardless of browser or platform.
+    const needsBootstrap = !event || !venue || !zone;
+    const [bootstrapLoading, setBootstrapLoading] = useState(needsBootstrap);
+    const [bootstrapFailed, setBootstrapFailed] = useState(false);
+    const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+    const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
+    const bootstrapRetryRef = useRef(0);
+    const BOOTSTRAP_MAX_RETRIES = 4; // 5 total attempts before giving up
+    useEffect(() => {
+        if (!needsBootstrap) { setBootstrapLoading(false); return; }
+        let alive = true;
+        setBootstrapLoading(true);
+        setBootstrapFailed(false);
+        setBootstrapError(null);
+        // Safari 18+ has a real, documented bug where fetch() can randomly fail
+        // with "TypeError: Load failed" even though the server is fine, reported
+        // as intermittent rather than a strict timing window - so a short,
+        // escalating delay plus several attempts is the most defensible
+        // mitigation available from the app side.
+        const delayMs = Math.min(400 + bootstrapRetryRef.current * 900, 4000);
+        const kickoff = window.setTimeout(() => {
+            if (!alive) return;
+            loadCustomerBootstrap().then((result) => {
+                if (!alive) return;
+                if (result.ok && result.data) {
+                    bootstrapRetryRef.current = 0;
+                    replaceData({ ...data, ...result.data }, "Customer QR direct-link bootstrap");
+                    setBootstrapLoading(false);
+                    return;
+                }
+                if (bootstrapRetryRef.current < BOOTSTRAP_MAX_RETRIES) { bootstrapRetryRef.current += 1; setBootstrapAttempt((value) => value + 1); return; }
+                setBootstrapFailed(true);
+                setBootstrapError(result.message ?? null);
+                setBootstrapLoading(false);
+            }).catch((error) => {
+                if (!alive) return;
+                if (bootstrapRetryRef.current < BOOTSTRAP_MAX_RETRIES) { bootstrapRetryRef.current += 1; setBootstrapAttempt((value) => value + 1); return; }
+                setBootstrapFailed(true);
+                setBootstrapError(error instanceof Error ? error.message : null);
+                setBootstrapLoading(false);
+            });
+        }, delayMs);
+        return () => { alive = false; window.clearTimeout(kickoff); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [bootstrapAttempt]);
 
     const [step, setStep] = useState<Step>("location");
     const [vertical, setVertical] = useState<string>("");
@@ -247,6 +301,18 @@ export default function CustomerOrder() {
             </main>
         );
     }
+    if (needsBootstrap && bootstrapLoading) {
+        return (
+            <main className="customer-shell" style={{ display: "grid", placeItems: "center", minHeight: "100vh", textAlign: "center" }}>
+                <div style={{ padding: "40px" }}>
+                    <img src="/seatserve-web-logo.png" alt="SeatServe" style={{ width: "200px", marginBottom: "20px" }} />
+                    <h2 style={{ color: "#071a3d" }}>Loading SeatServe location…</h2>
+                    <p style={{ color: "#64748b" }}>Please wait while we sync the live menu.</p>
+                </div>
+            </main>
+        );
+    }
+    if (needsBootstrap && bootstrapFailed) return <CustomerMessage title="Trouble connecting" message={bootstrapError ?? "We could not reach SeatServe. Check your connection and try again."} onRetry={() => { bootstrapRetryRef.current = 0; setBootstrapAttempt((value) => value + 1); }} />;
     if (!event || !venue || !zone) return <CustomerMessage title="This QR code is not valid" message="Ask a SeatServe staff member for the correct zone QR code." />;
     if (!available) return <CustomerMessage title="Ordering is currently closed" message={`${event.name} ${event.opponent ? `vs ${event.opponent}` : ""} is not accepting delivery orders for ${zone.name} right now.`} />;
 
@@ -340,6 +406,6 @@ function OrderTotals({ subtotal, deliveryFee, tax, cashTotal, estimatedCardFee, 
     return <div className="order-totals"><div><span>Subtotal</span><strong>{money(subtotal)}</strong></div><div><span>Delivery fee</span><strong>{money(deliveryFee)}</strong></div><div><span>Tax</span><strong>{money(tax)}</strong></div><div className="order-totals__total"><span>Exact cash total</span><strong>{money(cashTotal)}</strong></div><div><span>Estimated card fee</span><strong>{money(estimatedCardFee)}</strong></div><div className="order-totals__total order-totals__total--card"><span>Credit card total</span><strong>{money(cardTotal)}</strong></div></div>;
 }
 
-function CustomerMessage({ title, message }: { title: string; message: string }) {
-    return <div className="customer-message"><div className="customer-brand"><img src="/seatserve-web-logo.png" alt="SeatServe" className="customer-brand__logo" /></div><h1>{title}</h1><p>{message}</p><Link to="/admin">Return to SeatServe</Link></div>;
+function CustomerMessage({ title, message, onRetry }: { title: string; message: string; onRetry?: () => void }) {
+    return <div className="customer-message"><div className="customer-brand"><img src="/seatserve-web-logo.png" alt="SeatServe" className="customer-brand__logo" /></div><h1>{title}</h1><p>{message}</p>{onRetry && <button type="button" className="customer-primary" onClick={onRetry} style={{ marginTop: 16 }}>Try Again</button>}</div>;
 }

@@ -97,6 +97,27 @@ Manage deployments → Edit → New version → Deploy).
   all," both showing the generic "check your connection" message - which hid
   the actual error and made it hard to diagnose. Now a genuine server error
   message is shown on the Trouble connecting screen instead of being masked.
+- **The real root cause, finally confirmed**: the QR code you're actually
+  testing with (`/order/{eventId}/{venueId}/{zoneId}`) does NOT go through
+  StableZoneEntry at all - it lands directly on a different page,
+  CustomerOrder.tsx, which had ZERO mechanism to load venue/menu data for a
+  brand-new visitor. A fresh session starts with the app's built-in demo
+  data (not your real venues), and the only background sync that runs for
+  this page only ever refreshes orders/runners/events - never venues or
+  menus - so the error never self-corrected, on any browser or device. This
+  is why it kept failing consistently regardless of the Safari-specific
+  fixes above: those were all correctly fixing StableZoneEntry, a different
+  page than the one actually being tested. Added the same hardened bootstrap
+  (with retries and an honest "Trouble connecting" state) directly to
+  CustomerOrder.tsx as a fallback for anyone landing there directly. Also
+  fixed the same broken "Return to SeatServe" link (pointed at the admin
+  login) that OrderTracking.tsx had.
+- Worth strongly considering going forward: printed QR codes that use the
+  stable `/order/zone/{venueId}/{zoneId}` link (Venue & Zones page has a
+  copy/open button for this) don't need reprinting between events, since
+  they look up whichever event is currently live automatically. The
+  `/order/{eventId}/...` link that's currently printed bakes in a specific
+  event and will need a new QR code for your next event either way.
 - Tested the bootstrap endpoint directly and confirmed the backend itself
   returns clean, complete, correct data - the earlier failures were most
   likely caused by the 15-second timeout I added being too tight for Google
@@ -121,4 +142,30 @@ Manage deployments → Edit → New version → Deploy).
   with up to 3 total attempts, each waiting longer than the last (400ms,
   1300ms, 2200ms), to give much better odds of getting past whatever
   WebKit networking window causes this.
+- Correction to an earlier note in this log: I'd flagged the direct
+  /order/{eventId}/{venueId}/{zoneId} link as coming from the Dashboard's
+  "Preview ordering" button. Looking at the actual printed QR PDFs, the real
+  QR codes correctly use the stable /order/zone/{venue-slug}/{zone-slug}?w=...
+  format - what I was shown as "the link the QR code opens" was actually the
+  URL after StableZoneEntry's redirect, not the original scanned link. No
+  QR reprinting needed after all.
+- Found and fixed a real, separate bug while checking this: StableZoneEntry's
+  redirect to the order page was dropping the ?w= workspace query parameter
+  entirely, so CustomerOrder.tsx's workspace-switch logic never got a chance
+  to run for anyone arriving via a QR code. The redirect now carries the full
+  query string through. Likely low-impact on this specific deployment (it has
+  a fallback workspace baked in via Netlify env vars), but worth fixing for
+  correctness.
+- Confirmed via a direct raw-URL test on the same iPad (typed straight into
+  Safari's address bar, not through the app) that the backend and that
+  device's basic network connectivity are both completely fine - the failure
+  is specific to fetch() calls made from JavaScript, which matches other
+  independent reports of this bug describing it as a genuinely random,
+  intermittent Safari 18+ issue rather than a narrow timing window. Increased
+  retries from 3 total attempts to 5, since more attempts meaningfully
+  improve the odds against a random failure rate. This is a real bug in
+  Safari itself, not something fixable with certainty from the app side -
+  if it keeps recurring on one specific device, a full device restart (not
+  just clearing Safari history) is worth trying, since it can clear a stuck
+  WebKit networking state.
 

@@ -12,20 +12,18 @@ export default function StableZoneEntry(){
   const [attempt,setAttempt]=useState(0);
   const [errorMessage,setErrorMessage]=useState<string|null>(null);
   const retryCountRef=useRef(0);
-  const MAX_RETRIES=2; // 3 total attempts before showing an error
+  const MAX_RETRIES=4; // 5 total attempts before showing an error
   useEffect(()=>{
     let alive=true;
     setLoading(true);
     setConnectionFailed(false);
     setErrorMessage(null);
-    // Safari on iOS has a documented bug where a fetch fired immediately when a
-    // page becomes visible - exactly what happens right after scanning a QR
-    // code - can fail with "TypeError: Load failed" even though the server is
-    // completely fine. A delay before firing the request avoids it in most
-    // cases, but the safe window is unpredictable, so each retry waits a bit
-    // longer to maximize the chance of getting past it.
-    // https://developer.apple.com/forums/thread/771127
-    const delayMs = 400 + retryCountRef.current * 900;
+    // Safari 18+ has a real, documented bug (developer.apple.com/forums/thread/771127
+    // and others) where fetch() can randomly fail with "TypeError: Load failed" even
+    // though the server is completely fine - reports describe it as intermittent
+    // rather than a strict timing window, so retrying several times with a bit of
+    // spacing is the most defensible mitigation available from the app side.
+    const delayMs = Math.min(400 + retryCountRef.current * 900, 4000);
     const kickoff = window.setTimeout(() => {
       if(!alive) return;
       loadCustomerBootstrap().then(result=>{
@@ -56,7 +54,7 @@ export default function StableZoneEntry(){
   // briefly see a scary "zone not available" message during the split second
   // where the venue/zone have loaded but the live event hasn't been confirmed
   // yet, right before the page redirects them correctly anyway.
-  if(event&&venue&&zone) return <Navigate to={`/order/${event.id}/${venue.id}/${zone.id}`} replace/>;
+  if(event&&venue&&zone) return <Navigate to={`/order/${event.id}/${venue.id}/${zone.id}${window.location.search}`} replace/>;
   if(loading) return <main style={{minHeight:"100vh",display:"grid",placeItems:"center",fontFamily:"Inter,system-ui,sans-serif"}}><h2>Loading SeatServe location…</h2></main>;
   // A failed/timed-out connection is not the same thing as the server telling us
   // this zone genuinely doesn't exist - show a retry screen instead of the
