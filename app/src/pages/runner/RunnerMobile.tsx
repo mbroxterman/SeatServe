@@ -20,14 +20,14 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
-import { useSeatServe, MAX_RUNNER_ORDERS } from "../../state/SeatServeContext";
+import { useSeatServe } from "../../state/SeatServeContext";
 import type { Order, Runner } from "../../types/domain";
 import { getSyncMeta, pullFromGoogleSheets, type SyncMeta } from "../../services/persistence";
 import "./RunnerMobile.css";
 
 export default function RunnerMobile() {
   const { runnerId } = useParams();
-  const { data, replaceData, activeEvent, updateOrderStatus, markOrderPaymentCollected, requestSeatBeacon, markCustomerLocated, markRunnerAvailable, setRunnerStatus, assignRunnerToOrder, refreshLiveOperationalData } = useSeatServe();
+  const { data, replaceData, activeEvent, updateOrderStatus, markOrderPaymentCollected, requestSeatBeacon, markCustomerLocated, markRunnerAvailable, setRunnerStatus, refreshLiveOperationalData } = useSeatServe();
   const [syncMeta, setSyncMeta] = useState<SyncMeta>(() => getSyncMeta());
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncNotice, setSyncNotice] = useState("");
@@ -79,25 +79,24 @@ export default function RunnerMobile() {
   const runner = data.runners.find((item) => item.id === runnerId);
   if (!runner) return <Navigate to="/runner" replace />;
 
-  const activeOrders = runner.activeOrderIds
-    .map((id) => data.orders.find((order) => order.id === id))
-    .filter((order): order is Order => Boolean(order));
-  const allDelivered = activeOrders.length > 0 && activeOrders.every((order) => order.status === "delivered");
+  const fallbackStatuses = runner.status === "returning" ? ["delivered"] : ["assigned", "delivering"];
+  const activeOrderById = data.orders.find((order) => order.id === runner.activeOrderId);
+  const currentOrder = activeOrderById && fallbackStatuses.includes(activeOrderById.status)
+    ? activeOrderById
+    : data.orders.find((order) => order.runnerId === runner.id && fallbackStatuses.includes(order.status));
   const currentEventOrders = data.orders.filter((order) => order.eventId === activeEvent?.id);
   const history = currentEventOrders
     .filter((order) => order.runnerId === runner.id && order.status === "delivered")
     .sort((a, b) => new Date(b.deliveredAt ?? b.placedAt).getTime() - new Date(a.deliveredAt ?? a.placedAt).getTime());
-  const pickupCandidates = runner.active && runner.status !== "offline" && runner.status !== "returning" && activeOrders.length < MAX_RUNNER_ORDERS
-    ? currentEventOrders.filter((order) => order.status === "ready" && !order.runnerId && order.fulfillmentMethod !== "pickup")
-    : [];
+  const venue = data.venues.find((item) => item.id === currentOrder?.location.venueId);
+  const zone = venue?.zones.find((item) => item.id === currentOrder?.location.zoneId);
 
-  const confirmPickup = (orderId: string) => updateOrderStatus(orderId, "delivering");
-  const markDelivered = (orderId: string) => updateOrderStatus(orderId, "delivered");
-  const confirmPayment = (orderId: string) => markOrderPaymentCollected(orderId);
-  const requestBeacon = (orderId: string) => requestSeatBeacon(orderId);
-  const customerLocated = (orderId: string) => markCustomerLocated(orderId);
+  const confirmPickup = () => currentOrder && updateOrderStatus(currentOrder.id, "delivering");
+  const markDelivered = () => currentOrder && updateOrderStatus(currentOrder.id, "delivered");
+  const confirmPayment = () => currentOrder && markOrderPaymentCollected(currentOrder.id);
+  const requestBeacon = () => currentOrder && requestSeatBeacon(currentOrder.id);
+  const customerLocated = () => currentOrder && markCustomerLocated(currentOrder.id);
   const confirmReturn = () => markRunnerAvailable(runner.id);
-  const pickUpOrder = (orderId: string) => assignRunnerToOrder(orderId, runner.id);
 
   return (
     <section className="runner-mobile">
@@ -118,37 +117,19 @@ export default function RunnerMobile() {
       </header>
       {syncNotice && <div className={`runner-sync-notice${syncNotice.toLowerCase().includes("failed") ? " is-error" : ""}`}>{syncNotice}</div>}
 
-      {activeOrders.length > 0 ? (
-        <>
-          {activeOrders.length > 1 && <div className="runner-batch-heading"><Users size={17} /><span>Carrying {activeOrders.length} orders</span></div>}
-          {activeOrders.map((order) => {
-            const venue = data.venues.find((item) => item.id === order.location.venueId);
-            const zone = venue?.zones.find((item) => item.id === order.location.zoneId);
-            return (
-              <ActiveAssignment
-                key={order.id}
-                order={order}
-                zoneName={zone?.name ?? "Unknown zone"}
-                venueName={venue?.name ?? "Unknown venue"}
-                onPickup={() => confirmPickup(order.id)}
-                onDelivered={() => markDelivered(order.id)}
-                onPaymentCollected={() => confirmPayment(order.id)}
-                onRequestBeacon={() => requestBeacon(order.id)}
-                onCustomerLocated={() => customerLocated(order.id)}
-              />
-            );
-          })}
-          {allDelivered && (
-            <section className="runner-return-card">
-              <CheckCircle2 size={22} />
-              <div><strong>All caught up</strong><p>{activeOrders.length > 1 ? "Every order in this run has been delivered." : "This order has been delivered."}</p></div>
-              <button type="button" className="runner-primary runner-primary--return" onClick={confirmReturn}><RefreshCcw size={21} />I’m back at the kitchen<ArrowRight size={20} /></button>
-            </section>
-          )}
-          {!allDelivered && pickupCandidates.length > 0 && (
-            <PickupList orders={pickupCandidates} data={data} onPickUp={pickUpOrder} capacityLeft={MAX_RUNNER_ORDERS - activeOrders.length} />
-          )}
-        </>
+      {currentOrder ? (
+        <ActiveAssignment
+          order={currentOrder}
+          runner={runner}
+          zoneName={zone?.name ?? "Unknown zone"}
+          venueName={venue?.name ?? "Unknown venue"}
+          onPickup={confirmPickup}
+          onDelivered={markDelivered}
+          onPaymentCollected={confirmPayment}
+          onRequestBeacon={requestBeacon}
+          onCustomerLocated={customerLocated}
+          onReturn={confirmReturn}
+        />
       ) : (
         <section className={`runner-state-card ${runner.status === "available" ? "runner-state-card--waiting" : "runner-state-card--offline"}`}>
           {runner.status === "available" ? <div className="runner-pulse"><span /></div> : <div className="runner-state-card__icon"><Smartphone size={30} /></div>}
@@ -160,9 +141,6 @@ export default function RunnerMobile() {
           </div>
           {runner.status === "available" && <div className="runner-waiting-meta"><Clock3 size={18} /><span>Available since {formatTime(runner.availableSince)}</span></div>}
         </section>
-      )}
-      {runner.status === "available" && activeOrders.length === 0 && pickupCandidates.length > 0 && (
-        <PickupList orders={pickupCandidates} data={data} onPickUp={pickUpOrder} capacityLeft={MAX_RUNNER_ORDERS} />
       )}
 
       <section className="runner-history">
@@ -180,29 +158,6 @@ export default function RunnerMobile() {
           </div>
         )}
       </section>
-    </section>
-  );
-}
-
-function PickupList({ orders, data, onPickUp, capacityLeft }: { orders: Order[]; data: ReturnType<typeof useSeatServe>["data"]; onPickUp: (orderId: string) => void; capacityLeft: number }) {
-  return (
-    <section className="runner-pickup-list">
-      <div className="runner-section-heading">
-        <div><p className="runner-kicker">Ready for pickup</p><h2>Add to your run</h2></div>
-        <strong>{capacityLeft} more{capacityLeft === 1 ? "" : ""}</strong>
-      </div>
-      <div className="runner-pickup-list__items">
-        {orders.map((order) => {
-          const venue = data.venues.find((item) => item.id === order.location.venueId);
-          const zone = venue?.zones.find((item) => item.id === order.location.zoneId);
-          return (
-            <article key={order.id} className="runner-pickup-item">
-              <div><strong>{order.id}</strong><span>{zone?.name ?? "Unknown zone"} · {labelPosition(order)}</span></div>
-              <button type="button" onClick={() => onPickUp(order.id)}>Add to my run<ArrowRight size={16} /></button>
-            </article>
-          );
-        })}
-      </div>
     </section>
   );
 }
@@ -231,7 +186,8 @@ function RunnerSelection({ runners, activeEventName }: { runners: Runner[]; acti
   );
 }
 
-function ActiveAssignment({ order, zoneName, venueName, onPickup, onDelivered, onPaymentCollected, onRequestBeacon, onCustomerLocated }: { order: Order; zoneName: string; venueName: string; onPickup: () => void; onDelivered: () => void; onPaymentCollected: () => void; onRequestBeacon: () => void; onCustomerLocated: () => void }) {
+function ActiveAssignment({ order, runner, zoneName, venueName, onPickup, onDelivered, onPaymentCollected, onRequestBeacon, onCustomerLocated, onReturn }: { order: Order; runner: Runner; zoneName: string; venueName: string; onPickup: () => void; onDelivered: () => void; onPaymentCollected: () => void; onRequestBeacon: () => void; onCustomerLocated: () => void; onReturn: () => void }) {
+  const delivered = order.status === "delivered" || runner.status === "returning";
   const requiresPayment = order.paymentMethod === "cash" || order.paymentMethod === "card";
   const paymentCollected = Boolean(order.paymentCollectedAt) || !requiresPayment;
   const paymentAmount = order.paymentMethod === "card" ? (order.cardTotal ?? order.total) : (order.cashTotal ?? order.total);
@@ -274,8 +230,8 @@ function ActiveAssignment({ order, zoneName, venueName, onPickup, onDelivered, o
       <div className="runner-assignment__action">
         {order.status === "assigned" && <button type="button" className="runner-primary" onClick={onPickup}><PackageCheck size={21} />Confirm pickup and start delivery<ArrowRight size={20} /></button>}
         {order.status === "delivering" && <button type="button" className="runner-primary runner-primary--success" onClick={onDelivered} disabled={!paymentCollected}><CheckCircle2 size={21} />{paymentCollected ? "Mark order delivered" : "Collect payment before delivery"}<ArrowRight size={20} /></button>}
-        {order.status === "delivered" && <div className="runner-assignment__delivered"><CheckCircle2 size={20} /><span>Delivered</span></div>}
-        <p>{order.status === "assigned" ? "Confirm after you physically receive the order from the kitchen." : order.status === "delivering" ? (paymentCollected ? "Mark delivered only after handing the order to the customer." : "Confirm payment collection before marking the order delivered.") : "This order is complete."}</p>
+        {delivered && <button type="button" className="runner-primary runner-primary--return" onClick={onReturn}><RefreshCcw size={21} />I’m back at the kitchen<ArrowRight size={20} /></button>}
+        <p>{order.status === "assigned" ? "Confirm after you physically receive the order from the kitchen." : order.status === "delivering" ? (paymentCollected ? "Mark delivered only after handing the order to the customer." : "Confirm payment collection before marking the order delivered.") : "Returning to the kitchen makes you available for the next order."}</p>
       </div>
     </section>
   );

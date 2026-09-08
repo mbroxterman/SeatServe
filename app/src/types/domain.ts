@@ -42,7 +42,7 @@ export interface Runner {
     status: RunnerStatus;
     venueId?: string;
     zoneIds: string[];
-    activeOrderIds: string[];
+    activeOrderId?: string;
     completedDeliveries: number;
     rating: number;
     assignedAt?: string;

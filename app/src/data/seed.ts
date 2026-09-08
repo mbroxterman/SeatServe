@@ -119,9 +119,9 @@ export const seedData: SeatServeData = {
     },
   ],
   runners: [
-    { id: "runner-1", name: "Alex Carter", email: "alex@example.com", phone: "555-0101", role: "lead", status: "available", active: true, availableSince: at(17, 30), venueId: "venue-stadium", zoneIds: ["zone-home-west"], activeOrderIds: [], completedDeliveries: 14, rating: 4.9 },
-    { id: "runner-2", name: "Jordan Lee", email: "jordan@example.com", phone: "555-0102", role: "runner", status: "available", active: true, availableSince: at(17, 30), venueId: "venue-stadium", zoneIds: ["zone-home-east"], activeOrderIds: [], completedDeliveries: 9, rating: 4.8 },
-    { id: "runner-3", name: "Taylor Morgan", email: "taylor@example.com", phone: "555-0103", role: "runner", status: "offline", active: true, venueId: "venue-stadium", zoneIds: [], activeOrderIds: [], completedDeliveries: 6, rating: 4.7 },
+    { id: "runner-1", name: "Alex Carter", email: "alex@example.com", phone: "555-0101", role: "lead", status: "available", active: true, availableSince: at(17, 30), venueId: "venue-stadium", zoneIds: ["zone-home-west"], completedDeliveries: 14, rating: 4.9 },
+    { id: "runner-2", name: "Jordan Lee", email: "jordan@example.com", phone: "555-0102", role: "runner", status: "available", active: true, availableSince: at(17, 30), venueId: "venue-stadium", zoneIds: ["zone-home-east"], completedDeliveries: 9, rating: 4.8 },
+    { id: "runner-3", name: "Taylor Morgan", email: "taylor@example.com", phone: "555-0103", role: "runner", status: "offline", active: true, venueId: "venue-stadium", zoneIds: [], completedDeliveries: 6, rating: 4.7 },
   ],
   menuCategories: [
     { id: "cat-entrees", name: "Entrées", visible: true, sortOrder: 1 },
