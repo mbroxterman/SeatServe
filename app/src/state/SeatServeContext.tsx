@@ -220,6 +220,17 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
     const instanceIdRef = useRef(crypto.randomUUID());
     const serializedDataRef = useRef("");
     const currentDataRef = useRef(data);
+    // Runner status doesn't have a simple linear "rank" the way order status does
+    // (available -> assigned -> delivering -> returning -> available again is a
+    // loop, not a line), so a poll landing in the gap between a local optimistic
+    // runner change and that change actually finishing on the server can't be
+    // protected the same way orders are. Instead, give a runner a brief grace
+    // window after any local change during which polls don't overwrite it - this
+    // is what stops the "I'm back at the kitchen" button flashing back after a
+    // poll lands mid-transition.
+    const recentRunnerChangesRef = useRef<Map<string, number>>(new Map());
+    const RUNNER_CHANGE_GUARD_MS = 4000;
+    const markRunnerChangedLocally = (runnerId: string) => { recentRunnerChangesRef.current.set(runnerId, Date.now()); };
     const [cloudBootstrapReady, setCloudBootstrapReady] = useState(() => !isDeploymentManagedSync());
 
     const replaceData = (next: SeatServeData, reason = "SeatServe data replaced") => {
@@ -271,11 +282,19 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
             current.orders.forEach((local) => {
                 if (!reconciledOrders.some((order) => order.id === local.id)) reconciledOrders.push(local);
             });
+            const reconciledRunners = (live.runners ?? current.runners).map((remote) => {
+                const guardedAt = recentRunnerChangesRef.current.get(remote.id);
+                if (guardedAt && Date.now() - guardedAt < RUNNER_CHANGE_GUARD_MS) {
+                    const local = current.runners.find((runner) => runner.id === remote.id);
+                    if (local) return local;
+                }
+                return remote;
+            });
             const next = migrateData({
                 ...current,
                 events: live.events ?? current.events,
                 orders: reconciledOrders,
-                runners: live.runners ?? current.runners,
+                runners: reconciledRunners,
                 feedback: live.feedback ?? current.feedback,
             });
             if (JSON.stringify(next) === JSON.stringify(current)) return current;
@@ -628,6 +647,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
                 return runner;
             });
             applied = true;
+            if (order.runnerId) markRunnerChangedLocally(order.runnerId);
             return {
                 ...current,
                 orders: current.orders.map((item) => item.id === orderId ? { ...item, status, ...timestampPatch, ...(status === "ready" ? { runnerId: undefined, assignedAt: undefined } : {}) } : item),
@@ -714,6 +734,8 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
             const estimateMinutes = getZoneEstimate(current, order);
             const estimatedAvailableAt = new Date(now.getTime() + estimateMinutes * 60_000).toISOString();
             const nextStatus: Order["status"] = runnerId ? (order.status === "ready" ? "assigned" : order.status) : (order.status === "assigned" ? "ready" : order.status);
+            if (order.runnerId) markRunnerChangedLocally(order.runnerId);
+            if (runnerId) markRunnerChangedLocally(runnerId);
             return {
                 ...current,
                 orders: current.orders.map((item) => item.id === orderId ? { ...item, runnerId, status: nextStatus, assignedAt: runnerId ? now.toISOString() : undefined, assignmentQueuedAt: undefined } : item),
@@ -801,6 +823,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
                 const estimateMinutes = getZoneEstimate(current, queuedOrder);
                 const estimatedAvailableAt = new Date(now.getTime() + estimateMinutes * 60_000).toISOString();
                 outcome = { type: "reassigned", orderId: queuedOrder.id };
+                markRunnerChangedLocally(runnerId);
                 return {
                     ...current,
                     venues,
@@ -818,6 +841,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
                 };
             }
             outcome = { type: "available" };
+            markRunnerChangedLocally(runnerId);
             return {
                 ...current,
                 venues,
@@ -870,6 +894,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
             if (!runner) return current;
             if (runner.activeOrderId || runner.status === "assigned" || runner.status === "returning") return { ...current, activity: pushActivity(current, `${runner.name} cannot change availability while an order is active`, "warning") };
             const now = new Date().toISOString();
+            markRunnerChangedLocally(runnerId);
             return { ...current, runners: current.runners.map((item) => item.id === runnerId ? { ...item, status, availableSince: status === "available" ? now : undefined } : item), activity: pushActivity(current, `Runner status changed to ${status}`, "info") };
         });
         if (isDeploymentManagedSync() && navigator.onLine) void updateRunnerStatusLive(runnerId, status).then(() => refreshLiveOperationalData()).catch((error) => window.dispatchEvent(new CustomEvent("seatserve:operation-notice", { detail: { message: `Runner status failed: ${error instanceof Error ? error.message : "Unknown error"}`, tone: "error" } })));

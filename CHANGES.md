@@ -169,3 +169,21 @@ Manage deployments → Edit → New version → Deploy).
   just clearing Safari history) is worth trying, since it can clear a stuck
   WebKit networking state.
 
+## New Apps Script deployment (Sept 2026)
+The original deployment became unreliable across multiple days (slow, then
+unreachable, for every device including non-browser tests) - traced to a
+genuine backend/deployment issue, not a client bug. Fixed by creating a
+brand new Apps Script deployment and pointing Netlify's VITE_SEATSERVE_API_URL
+environment variable at the new URL. Confirmed working again afterward,
+including on the previously-struggling iPad and in Safari private browsing.
+
+## app/src/state/SeatServeContext.tsx (runner status flash)
+- Fixed a real bug: after a runner tapped "I'm back at the kitchen," the
+  button would briefly flash back before the screen correctly moved on to
+  the available/unavailable screen. Cause: unlike order status, a runner's
+  status had no protection against a background poll landing mid-transition
+  and briefly reverting it to the pre-change state. Added the same kind of
+  protection orders already had (a brief grace window after any local runner
+  change, so polls can't overwrite it until the change has had time to reach
+  the server).
+
