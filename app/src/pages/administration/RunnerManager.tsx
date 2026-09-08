@@ -8,7 +8,7 @@ import type { Runner, RunnerStatus } from "../../types/domain";
 import { updateRunnerStatusLive } from "../../services/persistence";
 import "./RunnerManager.css";
 
-type RunnerDraft = Omit<Runner, "id" | "activeOrderId" | "completedDeliveries" | "rating">;
+type RunnerDraft = Omit<Runner, "id" | "activeOrderIds" | "completedDeliveries" | "rating">;
 type Filter = "all" | RunnerStatus | "inactive";
 
 const statusLabel: Record<RunnerStatus, string> = {
@@ -117,8 +117,8 @@ export default function RunnerManager() {
                 <div className="runner-grid">
                     {filteredRunners.map((runner) => {
                         const venue = data.venues.find((candidate) => candidate.id === runner.venueId);
-                        const linkedOrder = runner.activeOrderId ? data.orders.find(o => o.id === runner.activeOrderId) : undefined;
-                        const isStuck = Boolean(runner.activeOrderId && (!linkedOrder || !["assigned", "delivering"].includes(linkedOrder.status)));
+                        const linkedOrders = runner.activeOrderIds.map((id) => data.orders.find((o) => o.id === id));
+                        const isStuck = runner.activeOrderIds.length > 0 && linkedOrders.some((order) => !order || !["assigned", "delivering", "delivered"].includes(order.status));
                         return (
                             <article key={runner.id} className={`runner-card ${!runner.active ? "is-inactive" : ""} ${isStuck ? "is-stuck" : ""}`}>
                                 <div className="runner-card__top">
@@ -152,7 +152,7 @@ export default function RunnerManager() {
                                             <span>Stuck on deleted order</span>
                                             <button className="force-available-btn" onClick={() => void forceAvailable(runner.id)}>Force Available</button>
                                         </div>
-                                    ) : runner.activeOrderId || runner.status === "assigned" || runner.status === "returning" ? (
+                                    ) : runner.activeOrderIds.length > 0 || runner.status === "assigned" || runner.status === "returning" ? (
                                         <div className="runner-card__system-status">{statusLabel[runner.status]} · controlled by the active delivery</div>
                                     ) : (["available", "offline"] as RunnerStatus[]).map((status) => (
                                         <button

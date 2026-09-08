@@ -1,5 +1,9 @@
 const SEATSERVE_SPREADSHEET_ID = '146i2shTLFn8PPAPbdZocCGYc4j-8tH_SY3T-T1AStJE';
 
+// A runner can carry up to this many active (not-yet-delivered) orders at once.
+// Keep in sync with MAX_RUNNER_ORDERS in the frontend's SeatServeContext.tsx.
+const MAX_RUNNER_ORDERS = 3;
+
 const DATA_SHEET = 'SeatServe Data';
 const META_SHEET = 'SeatServe Meta';
 const ASSET_SHEET = 'SeatServe Assets';
@@ -148,22 +152,38 @@ function assignRunner_(request) {
     if (runnerId) {
       const runner = (current.runners || []).find(function(item) { return item.id === runnerId; });
       if (!runner || !runner.active) return json_({ ok:false, message:'Selected runner is not active.', schemaVersion:16 });
-      const runnerIsCurrent = previousRunnerId === runnerId;
-      if (!runnerIsCurrent && (runner.status !== 'available' || runner.activeOrderId)) return json_({ ok:false, message:'Selected runner is not available.', schemaVersion:16 });
+      const runnerIsCurrent = (runner.activeOrderIds || []).indexOf(orderId) >= 0;
+      const isEligibleStatus = runner.status === 'available' || runner.status === 'assigned';
+      const hasCapacity = (runner.activeOrderIds || []).length < MAX_RUNNER_ORDERS;
+      if (!runnerIsCurrent && (!isEligibleStatus || !hasCapacity)) return json_({ ok:false, message:'Selected runner is not available.', schemaVersion:16 });
       order.runnerId = runnerId;
       if (order.status === 'ready') order.status = 'assigned';
       order.assignedAt = now;
       order.assignmentQueuedAt = '';
       (current.runners || []).forEach(function(item) {
-        if (item.id === previousRunnerId && item.id !== runnerId) { item.status='available'; item.activeOrderId=''; item.assignedAt=''; item.estimatedAvailableAt=''; item.availableSince=now; }
-        if (item.id === runnerId) { item.status='assigned'; item.activeOrderId=orderId; item.assignedAt=now; item.availableSince=''; }
+        if (item.id === previousRunnerId && item.id !== runnerId) {
+          const remaining = (item.activeOrderIds || []).filter(function(id) { return id !== orderId; });
+          item.activeOrderIds = remaining;
+          if (remaining.length === 0) { item.status='available'; item.assignedAt=''; item.estimatedAvailableAt=''; item.availableSince=now; }
+        }
+        if (item.id === runnerId) {
+          const already = (item.activeOrderIds || []).indexOf(orderId) >= 0;
+          item.activeOrderIds = already ? item.activeOrderIds : (item.activeOrderIds || []).concat([orderId]);
+          item.status='assigned';
+          if (!item.assignedAt) item.assignedAt = now;
+          item.availableSince='';
+        }
       });
     } else {
       order.runnerId = '';
       if (order.status === 'assigned') order.status = 'ready';
       order.assignedAt = '';
       (current.runners || []).forEach(function(item) {
-        if (item.id === previousRunnerId) { item.status='available'; item.activeOrderId=''; item.assignedAt=''; item.estimatedAvailableAt=''; item.availableSince=now; }
+        if (item.id === previousRunnerId) {
+          const remaining = (item.activeOrderIds || []).filter(function(id) { return id !== orderId; });
+          item.activeOrderIds = remaining;
+          if (remaining.length === 0) { item.status='available'; item.assignedAt=''; item.estimatedAvailableAt=''; item.availableSince=now; }
+        }
       });
     }
     storeActiveContacts_(current.orders || []);
@@ -197,7 +217,7 @@ function autoAssignRunner_(request) {
       return json_({ ok:true, runnerId:order.runnerId, runnerName:existing ? existing.name : '', message:'Order is already assigned.', updatedAt:getMeta_(metaSheet,'updatedAt') || '', schemaVersion:16 });
     }
     const active = (current.runners || []).filter(function(r) { return r.active; });
-    const available = active.filter(function(r) { return r.status === 'available' && !r.activeOrderId; });
+    const available = active.filter(function(r) { return r.status === 'available' && (r.activeOrderIds || []).length === 0; });
     available.sort(function(a,b) {
       const at = a.availableSince ? new Date(a.availableSince).getTime() : 0;
       const bt = b.availableSince ? new Date(b.availableSince).getTime() : 0;
@@ -205,7 +225,7 @@ function autoAssignRunner_(request) {
       return Number(a.completedDeliveries || 0) - Number(b.completedDeliveries || 0);
     });
     if (!available.length) {
-      const busy = active.filter(function(r) { return r.status !== 'available' || r.activeOrderId; }).length;
+      const busy = active.filter(function(r) { return r.status !== 'available' || (r.activeOrderIds || []).length > 0; }).length;
       return json_({ ok:false, message: active.length ? (active.length + ' active runner(s) found, but ' + busy + ' are currently unavailable or assigned.') : 'No active runners are configured.', activeRunnerCount:active.length, availableRunnerCount:0, schemaVersion:16 });
     }
     const runner = available[0];
@@ -215,7 +235,7 @@ function autoAssignRunner_(request) {
     order.assignedAt = now;
     order.assignmentQueuedAt = '';
     runner.status = 'assigned';
-    runner.activeOrderId = orderId;
+    runner.activeOrderIds = (runner.activeOrderIds || []).concat([orderId]);
     runner.assignedAt = now;
     runner.availableSince = '';
     storeActiveContacts_(current.orders || []);
@@ -242,11 +262,11 @@ function runnerStatus_(request) {
     const ss=getSpreadsheet_(), metaSheet=getOrCreate_(ss,META_SHEET,['key','value']), current=restoreActiveContacts_(readLiveOnly_(ss));
     const runner=(current.runners||[]).find(function(r){return r.id===runnerId;});
     if (!runner) return json_({ok:false,message:'Runner was not found.',schemaVersion:16});
-    const activeOrder=(current.orders||[]).find(function(o){return o.id===runner.activeOrderId && ['assigned','delivering'].indexOf(o.status)>=0;});
-    if (runner.activeOrderId && activeOrder && !clearAssignment) return json_({ok:false,message:'Runner is controlled by active order '+activeOrder.id+'.',schemaVersion:16});
+    const activeOrder=(current.orders||[]).find(function(o){return (runner.activeOrderIds||[]).indexOf(o.id)>=0 && ['assigned','delivering'].indexOf(o.status)>=0;});
+    if ((runner.activeOrderIds||[]).length>0 && activeOrder && !clearAssignment) return json_({ok:false,message:'Runner is controlled by active order '+activeOrder.id+'.',schemaVersion:16});
     if (clearAssignment && activeOrder) return json_({ok:false,message:'Cannot clear assignment while '+activeOrder.id+' is still active.',schemaVersion:16});
     const now=new Date().toISOString();
-    runner.status=status; runner.activeOrderId=''; runner.assignedAt=''; runner.estimatedAvailableAt=''; runner.availableSince=status==='available'?now:'';
+    runner.status=status; runner.activeOrderIds=[]; runner.assignedAt=''; runner.estimatedAvailableAt=''; runner.availableSince=status==='available'?now:'';
     const data=sanitizeForSheets_(current); writeLiveOnly_(ss,data); setMeta_(metaSheet,'updatedAt',now); setMeta_(metaSheet,'schemaVersion','17'); setMeta_(metaSheet,'lastWriteSource','SeatServe atomic runner status'); SpreadsheetApp.flush();
     return json_({ok:true,message:clearAssignment?'Stale assignment cleared and runner made available.':'Runner status updated.',updatedAt:now,schemaVersion:16});
   } finally { lock.releaseLock(); }
@@ -270,17 +290,19 @@ function markRunnerAvailable_(request) {
     const current = restoreActiveContacts_(readLiveOnly_(ss));
     const runner = (current.runners || []).find(function(r) { return r.id === runnerId; });
     if (!runner) return json_({ ok:false, message:'Runner was not found.', schemaVersion:16 });
-    const order = (current.orders || []).find(function(o) { return o.id === runner.activeOrderId; });
-    if (runner.status !== 'returning' || !order || order.status !== 'delivered') {
+    const activeIds = runner.activeOrderIds || [];
+    const orders = activeIds.map(function(id) { return (current.orders || []).find(function(o) { return o.id === id; }); });
+    const allDelivered = activeIds.length > 0 && orders.every(function(o) { return o && o.status === 'delivered'; });
+    if (runner.status !== 'returning' || !allDelivered) {
       return json_({ ok:false, message: (runner.name || 'Runner') + ' cannot be returned to the queue until the active delivery is complete.', schemaVersion:16 });
     }
     const now = new Date().toISOString();
     runner.status = 'available';
-    runner.activeOrderId = '';
+    runner.activeOrderIds = [];
     runner.assignedAt = '';
     runner.estimatedAvailableAt = '';
     runner.availableSince = now;
-    runner.completedDeliveries = Number(runner.completedDeliveries || 0) + 1;
+    runner.completedDeliveries = Number(runner.completedDeliveries || 0) + activeIds.length;
     const data = sanitizeForSheets_(current);
     writeLiveOnly_(ss, data);
     setMeta_(metaSheet, 'updatedAt', now);
@@ -485,14 +507,22 @@ function writeEventsTable_(ss, data) {
 }
 
 function readRunnersTable_(ss) {
-  return rowsAsObjects_(ss, 'Runners').filter(hasId_).map(function(x) { return {
-    id:string_(x.id), name:string_(x.name), email:string_(x.email), phone:string_(x.phone), role:string_(x.role) || 'runner', status:string_(x.status) || 'offline', active:bool_(x.active), venueId:string_(x.venueId), zoneIds:splitList_(x.zoneIds), completedDeliveries:number_(x.completedDeliveries), rating:number_(x.rating), activeOrderId:optionalString_(x.activeOrderId), availableSince:optionalString_(x.availableSince), assignedAt:optionalString_(x.assignedAt), estimatedAvailableAt:optionalString_(x.estimatedAvailableAt)
-  }; });
+  return rowsAsObjects_(ss, 'Runners').filter(hasId_).map(function(x) {
+    // A runner can now carry more than one order at once. Prefer the new
+    // comma-separated activeOrderIds column; fall back to the old single
+    // activeOrderId column for any rows that haven't been rewritten yet since
+    // this was a single value.
+    var activeOrderIds = splitList_(x.activeOrderIds);
+    if (activeOrderIds.length === 0 && x.activeOrderId) activeOrderIds = [string_(x.activeOrderId)];
+    return {
+      id:string_(x.id), name:string_(x.name), email:string_(x.email), phone:string_(x.phone), role:string_(x.role) || 'runner', status:string_(x.status) || 'offline', active:bool_(x.active), venueId:string_(x.venueId), zoneIds:splitList_(x.zoneIds), completedDeliveries:number_(x.completedDeliveries), rating:number_(x.rating), activeOrderIds:activeOrderIds, availableSince:optionalString_(x.availableSince), assignedAt:optionalString_(x.assignedAt), estimatedAvailableAt:optionalString_(x.estimatedAvailableAt)
+    };
+  });
 }
 
 function writeRunnersTable_(ss, data) {
-  writeTable_(ss, 'Runners', ['id','name','email','phone','role','status','active','venueId','zoneIds','completedDeliveries','rating','activeOrderId','availableSince','assignedAt','estimatedAvailableAt'], (data.runners || []).map(function(x) {
-    return [x.id,x.name,x.email || '',x.phone || '',x.role,x.status,boolean_(x.active),x.venueId || '',(x.zoneIds || []).join(', '),number_(x.completedDeliveries),number_(x.rating),x.activeOrderId || '',x.availableSince || '',x.assignedAt || '',x.estimatedAvailableAt || ''];
+  writeTable_(ss, 'Runners', ['id','name','email','phone','role','status','active','venueId','zoneIds','completedDeliveries','rating','activeOrderIds','availableSince','assignedAt','estimatedAvailableAt'], (data.runners || []).map(function(x) {
+    return [x.id,x.name,x.email || '',x.phone || '',x.role,x.status,boolean_(x.active),x.venueId || '',(x.zoneIds || []).join(', '),number_(x.completedDeliveries),number_(x.rating),(x.activeOrderIds || []).join(', '),x.availableSince || '',x.assignedAt || '',x.estimatedAvailableAt || ''];
   }));
 }
 

@@ -42,7 +42,7 @@ type VenueDraft = Omit<Venue, "id" | "zones">;
 type ZoneDraft = Omit<DeliveryZone, "id" | "sections">;
 type SectionDraft = Omit<VenueSection, "id">;
 type OrderDraft = Omit<Order, "id" | "placedAt" | "status">;
-type RunnerDraft = Omit<Runner, "id" | "activeOrderId" | "completedDeliveries" | "rating">;
+type RunnerDraft = Omit<Runner, "id" | "activeOrderIds" | "completedDeliveries" | "rating">;
 type MenuItemDraft = Omit<MenuItem, "id">;
 type MenuCategoryDraft = Omit<MenuCategory, "id">;
 type MenuDefinitionDraft = Omit<MenuDefinition, "id">;
@@ -111,6 +111,9 @@ interface SeatServeContextValue {
 
 const SeatServeContext = createContext<SeatServeContextValue | undefined>(undefined);
 
+// A runner can carry up to this many active (not-yet-delivered) orders at once.
+export const MAX_RUNNER_ORDERS = 3;
+
 const migrateData = (candidate: SeatServeData): SeatServeData => {
     const safe = (candidate && typeof candidate === "object" ? candidate : seedData) as SeatServeData;
     const events = Array.isArray(safe.events) ? safe.events : [];
@@ -140,10 +143,11 @@ const migrateData = (candidate: SeatServeData): SeatServeData => {
             })),
         })),
         runners: runners.map((runner) => {
-            const { shiftStart: _shiftStart, shiftEnd: _shiftEnd, ...rest } = runner as Runner & { shiftStart?: string; shiftEnd?: string };
+            const { shiftStart: _shiftStart, shiftEnd: _shiftEnd, activeOrderId: _legacyActiveOrderId, ...rest } = runner as Runner & { shiftStart?: string; shiftEnd?: string; activeOrderId?: string };
             return {
                 ...rest,
                 zoneIds: Array.isArray(runner.zoneIds) ? runner.zoneIds : [],
+                activeOrderIds: Array.isArray(runner.activeOrderIds) ? runner.activeOrderIds : (_legacyActiveOrderId ? [_legacyActiveOrderId] : []),
                 availableSince: runner.availableSince ?? (runner.status === "available" ? new Date().toISOString() : undefined),
             };
         }),
@@ -640,10 +644,26 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
                             : status === "delivered" ? { deliveredAt: order.deliveredAt ?? now, ...(order.fulfillmentMethod === "pickup" && requiresPayment && !order.paymentCollectedAt ? { paymentCollectedAt: now } : {}) }
                                 : {};
             const runnerAfterStatus = current.runners.map((runner) => {
-                if (runner.id !== order.runnerId) return runner;
-                if (status === "delivered") return { ...runner, status: "returning" as const, activeOrderId: orderId };
-                if (status === "cancelled" || status === "ready") return { ...runner, status: "available" as const, activeOrderId: undefined, assignedAt: undefined, estimatedAvailableAt: undefined, availableSince: now };
-                if (status === "delivering") return { ...runner, status: "assigned" as const, activeOrderId: orderId };
+                if (!runner.activeOrderIds.includes(order.id)) return runner;
+                const stillActiveElsewhere = (excludeId: string) => runner.activeOrderIds.some((id) => {
+                    if (id === excludeId) return false;
+                    const other = current.orders.find((item) => item.id === id);
+                    return other ? !["delivered", "cancelled"].includes(other.status) : false;
+                });
+                if (status === "delivered") {
+                    // The order stays on the runner's list (cleared only once they confirm
+                    // "back at the kitchen") - only flip to returning once nothing else
+                    // they're carrying is still outstanding.
+                    return stillActiveElsewhere(order.id) ? runner : { ...runner, status: "returning" as const };
+                }
+                if (status === "cancelled" || status === "ready") {
+                    // This order is leaving the runner's batch entirely (pulled back by
+                    // Kitchen, or cancelled) - only free the runner up if it was their
+                    // last outstanding order.
+                    const remainingIds = runner.activeOrderIds.filter((id) => id !== order.id);
+                    if (remainingIds.length > 0) return { ...runner, activeOrderIds: remainingIds, status: stillActiveElsewhere(order.id) ? runner.status : "returning" as const };
+                    return { ...runner, activeOrderIds: remainingIds, status: "available" as const, assignedAt: undefined, estimatedAvailableAt: undefined, availableSince: now };
+                }
                 return runner;
             });
             applied = true;
@@ -725,8 +745,10 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
             if (!order || order.fulfillmentMethod === "pickup" || !["ready", "assigned", "delivering"].includes(order.status)) return current;
             if (runnerId) {
                 const requestedRunner = current.runners.find((runner) => runner.id === runnerId);
-                const runnerIsCurrent = requestedRunner?.id === order.runnerId;
-                if (!requestedRunner || !requestedRunner.active || (!runnerIsCurrent && (requestedRunner.status !== "available" || requestedRunner.activeOrderId))) {
+                const runnerIsCurrent = Boolean(requestedRunner?.activeOrderIds.includes(orderId));
+                const isEligibleStatus = requestedRunner?.status === "available" || requestedRunner?.status === "assigned";
+                const hasCapacity = Boolean(requestedRunner && requestedRunner.activeOrderIds.length < MAX_RUNNER_ORDERS);
+                if (!requestedRunner || !requestedRunner.active || (!runnerIsCurrent && (!isEligibleStatus || !hasCapacity))) {
                     return { ...current, activity: pushActivity(current, `Runner assignment blocked for order ${orderId}; selected runner is not available`, "warning") };
                 }
             }
@@ -740,8 +762,23 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
                 ...current,
                 orders: current.orders.map((item) => item.id === orderId ? { ...item, runnerId, status: nextStatus, assignedAt: runnerId ? now.toISOString() : undefined, assignmentQueuedAt: undefined } : item),
                 runners: current.runners.map((runner) => {
-                    if (runner.id === order.runnerId && runner.id !== runnerId) return { ...runner, status: "available" as const, activeOrderId: undefined, assignedAt: undefined, estimatedAvailableAt: undefined, availableSince: now.toISOString() };
-                    if (runner.id === runnerId) return { ...runner, status: "assigned" as const, activeOrderId: orderId, assignedAt: now.toISOString(), estimatedAvailableAt, availableSince: undefined };
+                    if (runner.id === order.runnerId && runner.id !== runnerId) {
+                        const remainingIds = runner.activeOrderIds.filter((id) => id !== orderId);
+                        return remainingIds.length > 0
+                            ? { ...runner, activeOrderIds: remainingIds }
+                            : { ...runner, activeOrderIds: remainingIds, status: "available" as const, assignedAt: undefined, estimatedAvailableAt: undefined, availableSince: now.toISOString() };
+                    }
+                    if (runner.id === runnerId) {
+                        const alreadyHas = runner.activeOrderIds.includes(orderId);
+                        return {
+                            ...runner,
+                            activeOrderIds: alreadyHas ? runner.activeOrderIds : [...runner.activeOrderIds, orderId],
+                            status: "assigned" as const,
+                            assignedAt: runner.assignedAt ?? now.toISOString(),
+                            estimatedAvailableAt,
+                            availableSince: undefined,
+                        };
+                    }
                     return runner;
                 }),
                 activity: pushActivity(current, runnerId ? `Runner assigned to order ${orderId}` : `Runner removed from order ${orderId}`, "info"),
@@ -779,7 +816,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
         }
 
         const runner = current.runners
-            .filter((item) => item.active && item.status === "available" && !item.activeOrderId)
+            .filter((item) => item.active && item.status === "available" && item.activeOrderIds.length === 0)
             .sort((a, b) => {
                 const waited = new Date(a.availableSince ?? 0).getTime() - new Date(b.availableSince ?? 0).getTime();
                 return waited || a.completedDeliveries - b.completedDeliveries;
@@ -797,15 +834,21 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
         setData((current) => {
             const runner = current.runners.find((item) => item.id === runnerId);
             if (!runner) return current;
-            const order = current.orders.find((item) => item.id === runner.activeOrderId);
-            if (runner.status !== "returning" || !order || order.status !== "delivered") {
+            const deliveredOrders = runner.activeOrderIds
+                .map((id) => current.orders.find((item) => item.id === id))
+                .filter((item): item is Order => Boolean(item));
+            const allDelivered = runner.activeOrderIds.length > 0 && deliveredOrders.length === runner.activeOrderIds.length && deliveredOrders.every((item) => item.status === "delivered");
+            if (runner.status !== "returning" || !allDelivered) {
                 return { ...current, activity: pushActivity(current, `${runner.name} cannot be returned to the queue until the active delivery is complete`, "warning") };
             }
             const now = new Date();
             let venues = current.venues;
-            if (order?.assignedAt) {
+            // A runner can now be carrying orders to different zones, so learn the
+            // round-trip time for each zone they actually delivered to this run.
+            deliveredOrders.forEach((order) => {
+                if (!order.assignedAt) return;
                 const actualMinutes = Math.max(1, (now.getTime() - new Date(order.assignedAt).getTime()) / 60_000);
-                venues = current.venues.map((venue) => venue.id !== order.location.venueId ? venue : {
+                venues = venues.map((venue) => venue.id !== order.location.venueId ? venue : {
                     ...venue,
                     zones: venue.zones.map((zone) => {
                         if (zone.id !== order.location.zoneId) return zone;
@@ -814,7 +857,8 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
                         return { ...zone, learnedRoundTripMinutes, completedTripCount: (zone.completedTripCount ?? 0) + 1 };
                     }),
                 });
-            }
+            });
+            const deliveredCount = deliveredOrders.length;
             const liveEventId = current.events.find((event) => event.status === "live")?.id;
             const queuedOrder = current.orders
                 .filter((item) => item.status === "ready" && item.assignmentQueuedAt && (!liveEventId || item.eventId === liveEventId))
@@ -831,11 +875,11 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
                     runners: current.runners.map((item) => item.id === runnerId ? {
                         ...item,
                         status: "assigned" as const,
-                        activeOrderId: queuedOrder.id,
+                        activeOrderIds: [queuedOrder.id],
                         assignedAt: now.toISOString(),
                         estimatedAvailableAt,
                         availableSince: undefined,
-                        completedDeliveries: order?.status === "delivered" ? item.completedDeliveries + 1 : item.completedDeliveries,
+                        completedDeliveries: item.completedDeliveries + deliveredCount,
                     } : item),
                     activity: pushActivity(current, `${runner.name} returned and was assigned to queued order ${queuedOrder.id}`, "success"),
                 };
@@ -848,11 +892,11 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
                 runners: current.runners.map((item) => item.id === runnerId ? {
                     ...item,
                     status: "available" as const,
-                    activeOrderId: undefined,
+                    activeOrderIds: [],
                     assignedAt: undefined,
                     estimatedAvailableAt: undefined,
                     availableSince: now.toISOString(),
-                    completedDeliveries: order?.status === "delivered" ? item.completedDeliveries + 1 : item.completedDeliveries,
+                    completedDeliveries: item.completedDeliveries + deliveredCount,
                 } : item),
                 activity: pushActivity(current, `${runner.name} returned and is available`, "success"),
             };
@@ -872,18 +916,18 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
 
     const addRunner = (draft: RunnerDraft) => {
         const id = crypto.randomUUID();
-        setData((current) => ({ ...current, runners: [...current.runners, { ...draft, id, completedDeliveries: 0, rating: 5 }], activity: pushActivity(current, `${draft.name} added to runner roster`, "success") }));
+        setData((current) => ({ ...current, runners: [...current.runners, { ...draft, id, activeOrderIds: [], completedDeliveries: 0, rating: 5 }], activity: pushActivity(current, `${draft.name} added to runner roster`, "success") }));
         return id;
     };
     const updateRunner = (runnerId: string, draft: RunnerDraft) => setData((current) => ({ ...current, runners: current.runners.map((runner) => runner.id === runnerId ? { ...runner, ...draft } : runner), activity: pushActivity(current, `${draft.name} runner profile updated`, "info") }));
     const duplicateRunner = (runnerId: string) => setData((current) => {
         const source = current.runners.find((runner) => runner.id === runnerId);
         if (!source) return current;
-        const copy: Runner = { ...source, id: crypto.randomUUID(), name: `${source.name} Copy`, email: "", phone: "", status: "offline", activeOrderId: undefined, completedDeliveries: 0, rating: 5 };
+        const copy: Runner = { ...source, id: crypto.randomUUID(), name: `${source.name} Copy`, email: "", phone: "", status: "offline", activeOrderIds: [], completedDeliveries: 0, rating: 5 };
         return { ...current, runners: [...current.runners, copy], activity: pushActivity(current, `${source.name} duplicated`, "info") };
     });
     const deleteRunner = (runnerId: string) => {
-        if (data.runners.some((runner) => runner.id === runnerId && runner.activeOrderId)) return false;
+        if (data.runners.some((runner) => runner.id === runnerId && runner.activeOrderIds.length > 0)) return false;
         setData((current) => ({ ...current, runners: current.runners.filter((runner) => runner.id !== runnerId), activity: pushActivity(current, "Runner removed", "warning") }));
         return true;
     };
@@ -892,7 +936,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
         setData((current) => {
             const runner = current.runners.find((item) => item.id === runnerId);
             if (!runner) return current;
-            if (runner.activeOrderId || runner.status === "assigned" || runner.status === "returning") return { ...current, activity: pushActivity(current, `${runner.name} cannot change availability while an order is active`, "warning") };
+            if (runner.activeOrderIds.length > 0 || runner.status === "assigned" || runner.status === "returning") return { ...current, activity: pushActivity(current, `${runner.name} cannot change availability while an order is active`, "warning") };
             const now = new Date().toISOString();
             markRunnerChangedLocally(runnerId);
             return { ...current, runners: current.runners.map((item) => item.id === runnerId ? { ...item, status, availableSince: status === "available" ? now : undefined } : item), activity: pushActivity(current, `Runner status changed to ${status}`, "info") };
@@ -1083,7 +1127,7 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
         setData((current) => {
             const menuIds = new Set(current.menus.map((menu) => menu.id));
             const itemIds = new Set(current.menuItems.map((item) => item.id));
-            const orderIds = new Set(current.orders.filter((order) => order.status !== "delivered" && order.status !== "cancelled").map((order) => order.id));
+            const allOrderIds = new Set(current.orders.map((order) => order.id));
             const repairedEvents = current.events.map((event) => event.menuId && !menuIds.has(event.menuId) ? { ...event, menuId: undefined } : event);
             const repairedMenus = current.menus.map((menu) => ({
                 ...menu,
@@ -1091,7 +1135,22 @@ export function SeatServeProvider({ children }: { children: ReactNode }) {
                 hiddenItemIds: (menu.hiddenItemIds ?? []).filter((id) => itemIds.has(id)),
                 priceOverrides: Object.fromEntries(Object.entries(menu.priceOverrides ?? {}).filter(([id]) => itemIds.has(id))),
             }));
-            const repairedRunners = current.runners.map((runner) => runner.activeOrderId && !orderIds.has(runner.activeOrderId) ? { ...runner, activeOrderId: undefined, status: runner.status === "assigned" || runner.status === "returning" ? "available" as const : runner.status, availableSince: new Date().toISOString(), assignedAt: undefined, estimatedAvailableAt: undefined } : runner);
+            const repairedRunners = current.runners.map((runner) => {
+                // A stale reference means the order no longer exists at all - not
+                // just that it's already delivered. A delivered order legitimately
+                // stays on the runner's list until they confirm "back at the kitchen".
+                const validIds = runner.activeOrderIds.filter((id) => allOrderIds.has(id));
+                if (validIds.length === runner.activeOrderIds.length) return runner;
+                const nowFullyFree = validIds.length === 0;
+                return {
+                    ...runner,
+                    activeOrderIds: validIds,
+                    status: nowFullyFree && (runner.status === "assigned" || runner.status === "returning") ? "available" as const : runner.status,
+                    availableSince: nowFullyFree ? new Date().toISOString() : runner.availableSince,
+                    assignedAt: nowFullyFree ? undefined : runner.assignedAt,
+                    estimatedAvailableAt: nowFullyFree ? undefined : runner.estimatedAvailableAt,
+                };
+            });
             return { ...current, events: repairedEvents, menus: repairedMenus, runners: repairedRunners, activity: pushActivity(current, "Workspace links repaired and stale references removed", "success") };
         });
     };

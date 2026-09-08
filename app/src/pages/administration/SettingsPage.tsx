@@ -55,10 +55,10 @@ export default function SettingsPage() {
     const dataHealth = useMemo(() => {
         const menuIds = new Set(data.menus.map((menu) => menu.id));
         const itemIds = new Set(data.menuItems.map((item) => item.id));
-        const activeOrderIds = new Set(data.orders.filter((order) => order.status !== "delivered" && order.status !== "cancelled").map((order) => order.id));
+        const allOrderIds = new Set(data.orders.map((order) => order.id));
         const invalidEventMenus = data.events.filter((event) => event.menuId && !menuIds.has(event.menuId)).length;
         const invalidMenuItems = data.menus.reduce((sum, menu) => sum + menu.itemIds.filter((id) => !itemIds.has(id)).length + (menu.hiddenItemIds ?? []).filter((id) => !itemIds.has(id)).length, 0);
-        const staleRunnerAssignments = data.runners.filter((runner) => runner.activeOrderId && !activeOrderIds.has(runner.activeOrderId)).length;
+        const staleRunnerAssignments = data.runners.filter((runner) => runner.activeOrderIds.some((id) => !allOrderIds.has(id))).length;
         return { invalidEventMenus, invalidMenuItems, staleRunnerAssignments, total: invalidEventMenus + invalidMenuItems + staleRunnerAssignments };
     }, [data.events, data.menus, data.menuItems, data.orders, data.runners]);
 
