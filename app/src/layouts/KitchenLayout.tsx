@@ -1,7 +1,7 @@
 import { ArrowLeft, Bell, BellOff, CircleUserRound, LogOut } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, Outlet } from "react-router-dom";
-import { useSeatServe } from "./state/SeatServeContext";
+import { useSeatServe } from "../state/SeatServeContext";
 import "./KitchenLayout.css";
 
 const SOUND_PREF_KEY = "seatserve:kitchen-sound-enabled";
